@@ -1,0 +1,413 @@
+module boss(clk, address, data);
+
+input clk;
+output [16:0] address;
+input [7:0] data;
+
+reg [16:0] address;
+
+reg [2:0] state;
+reg [2:0] lastState;
+
+reg [16:0] pc;
+reg [16:0] curPC;
+reg [16:0] globalsAddress;
+
+reg readHigh;
+
+reg [4:0] op;
+reg [1:0] operNum;
+reg [7:0] operTypes;
+reg [15:0] operand [1:0];
+reg [1:0] operandIdx;
+reg [13:0] branch;
+reg [7:0] store;
+reg negate;
+
+reg [15:0] localRegs [3:0];
+reg [15:0] stack[7:0];
+
+`define OPER_LARGE 2'b00
+`define OPER_SMALL 2'b01
+`define OPER_VARI  2'b10
+`define OPER_OMIT  2'b11
+
+`define STATE_FETCH_OP		0
+`define STATE_READ_TYPES	1
+`define STATE_READ_OPERS	2
+`define STATE_READ_STORE	3
+`define STATE_READ_BRANCH	4
+`define STATE_READ_REG		6
+`define STATE_WRITE_MEM		7
+
+`define OP_0	2'b00
+`define OP_1	2'b01
+`define OP_2	2'b10
+`define OP_VAR	2'b11
+
+`define OP1_JZ		'h0
+
+`define OP2_JE		'h1
+`define OP2_JL		'h2
+`define OP2_JG		'h3
+`define OP2_OR		'h8
+`define OP2_AND		'h9
+`define OP2_STORE	'hD
+`define OP2_ADD		'h14
+`define OP2_SUB		'h15
+`define OP2_MUL		'h16
+`define OP2_DIV		'h17
+`define OP2_MOD		'h18
+
+reg [8:0] k;
+
+reg [1:0]  memStack;
+reg [16:0] memStackAddress [1:0];
+reg [7:0]  memStackValue [1:0];
+reg memStackWrite [1:0];
+
+initial
+begin
+	state=0;
+	readHigh=0;
+	pc=0;
+	localRegs[0]=0;
+	memStack=0;
+	memStackWrite[0]=1;
+	globalsAddress='hF000;
+	for (k=1; k<16; k=k+1) begin
+		localRegs[k]=k+9000;
+	end
+end
+
+task DoMemOp8;
+	input [16:0] location;
+	input [7:0] value;
+	input bWrite;
+	begin
+		memStackAddress[memStack]=location;
+		memStackValue[memStack]=value;
+		memStackWrite[memStack]=bWrite;
+		memStack=memStack+1;
+		state=`STATE_WRITE_MEM;
+	end
+endtask
+
+task DoMemOp16;
+	input [16:0] location;
+	input [15:0] value;
+	input bWrite;
+	begin
+		DoMemOp8(location+0, value[15:8], bWrite);
+		DoMemOp8(location+1, value[7:0],  bWrite);
+	end
+endtask
+
+task StoreRegister;
+	input [7:0] regNum;
+	input [15:0] value;
+	begin
+		if (regNum>=16) begin
+			DoMemOp16(globalsAddress+2*regNum-16, value, 1);
+		end else if (regNum==0) begin
+			stack[localRegs[0]]=value;
+			localRegs[0]=localRegs[0]+1;
+		end else begin
+			localRegs[regNum]=value;
+		end
+	end
+endtask
+
+task StoreResult;
+	input [15:0] result;
+	begin
+		StoreRegister(store, result);
+	end
+endtask
+
+task DoBranch;
+	input result;
+	begin
+		if ((!result)==negate) begin
+			if (branch==0) begin
+			end else if (branch==1) begin
+			end else begin
+				pc=curPC+$signed(branch)-2;
+			end
+		end
+	end
+endtask
+
+task DoOp;
+	input nextState;
+	begin
+		case (operNum)
+			`OP_1: begin
+				case (op)
+					`OP1_JZ: DoBranch(operand[0]==0);
+				endcase
+			end
+			`OP_2: begin
+				case (op)
+					`OP2_JE: DoBranch(operand[0]==operand[1]);
+					`OP2_JL: DoBranch($signed(operand[0])<$signed(operand[1]));
+					`OP2_JG: DoBranch($signed(operand[0])>$signed(operand[1]));
+					`OP2_OR: StoreResult(operand[0]|operand[1]);
+					`OP2_AND: StoreResult(operand[0]&operand[1]);
+					`OP2_STORE: StoreRegister(operand[0], operand[1]);
+					`OP2_ADD: StoreResult($signed(operand[0])+$signed(operand[1]));
+					`OP2_SUB: StoreResult($signed(operand[0])-$signed(operand[1]));
+					`OP2_MUL: StoreResult($signed(operand[0])*$signed(operand[1]));
+					`OP2_DIV: StoreResult($signed(operand[0])/$signed(operand[1]));
+					`OP2_MOD: StoreResult($signed(operand[0])-$signed(operand[1]));
+				endcase
+			end
+		endcase
+		if (memStack==0)
+			state=nextState;
+		else
+			lastState=nextState;
+	end
+endtask
+
+always @ (posedge clk)
+begin
+	if (!memStackWrite[memStack]) begin
+		memStackValue[memStack]=data;
+	end
+	case(state)
+		`STATE_FETCH_OP: begin
+			curPC=pc;
+			case (data[7:6])
+				2'b10: begin
+					// short form
+					op[4:0]=data[3:0];
+					operNum[1:0]=(data[5:4]==2'b11)?`OP_0:`OP_1;
+					operTypes[1:0]=data[5:4];
+					operTypes[7:2]=6'b111111;
+					if (operNum==0) begin
+						case (op)
+							'h05,'h06,'h0D,'h0F: state=`STATE_READ_BRANCH;
+							default: DoOp(`STATE_FETCH_OP);
+						endcase
+					end else
+						state=`STATE_READ_OPERS;
+				end
+				2'b11: begin
+					// variable form
+					op[4:0]=data[4:0];
+					operNum[1:0]=(data[5]?`OP_VAR:`OP_2);
+					state=`STATE_READ_TYPES;
+				end
+				default: begin
+					// long form
+					op[4:0]=data[4:0];
+					operNum[1:0]=`OP_2;
+					operTypes[1:0]=(data[6] ? `OPER_VARI : `OPER_SMALL);
+					operTypes[3:2]=(data[5] ? `OPER_VARI : `OPER_SMALL);
+					operTypes[7:4]=4'b1111;
+					state=`STATE_READ_OPERS;
+				end
+			endcase
+			operandIdx=0;
+		end
+		`STATE_READ_TYPES: begin
+			operTypes[1:0]=data[7:6];
+			operTypes[3:2]=data[5:4];
+			operTypes[5:4]=data[3:2];
+			operTypes[7:6]=data[1:0];
+			state=`STATE_READ_OPERS;
+		end
+		`STATE_READ_OPERS: begin
+			case (operTypes[1:0])
+				`OPER_SMALL: begin
+					operand[operandIdx]=data[7:0];
+				end
+				`OPER_LARGE: begin
+					if (!readHigh) begin
+						operand[operandIdx][15:8]=data[7:0];
+						readHigh=1;
+					end else begin
+						operand[operandIdx][7:0]=data[7:0];
+						readHigh=0;
+					end
+				end
+				`OPER_VARI: begin
+					if (!readHigh) begin
+						if (data>=16) begin
+							lastState=state;
+							DoMemOp16(globalsAddress+2*data-16, 0, 0);
+							readHigh=1;
+						end else if (data==0) begin
+							localRegs[0]=localRegs[0]-1;
+							operand[operandIdx]=stack[localRegs[0]];
+						end else begin
+							operand[operandIdx]=localRegs[data];
+						end
+					end else if (memStack==0) begin
+						operand[operandIdx]=(memStackValue[0]<<8)|memStackValue[1];
+						readHigh=0;
+					end
+				end
+				`OPER_OMIT: begin
+					case (operNum)
+						`OP_1: begin
+							case (op[4:0])
+								'h01,'h02,'h03,'h04,'h08,'h0E,'h0F: state=`STATE_READ_STORE;
+								'h00: state=`STATE_READ_BRANCH;
+								default: DoOp(`STATE_FETCH_OP);
+							endcase
+					end
+						`OP_2: begin
+							case (op[4:0])
+								'h08,'h09,'h0F,'h10,'h11,'h12,'h13,'h14,'h15,'h16,'h17,'h18,'h19: state=`STATE_READ_STORE;
+								'h01,'h02,'h03,'h04,'h05,'h06,'h07,'h0A: state=`STATE_READ_BRANCH;
+								default: DoOp(`STATE_FETCH_OP);
+							endcase
+						end
+						`OP_VAR: begin
+							case (op[4:0])
+								'h00,'h07,'h0C,'h16,'h17,'h18: state=`STATE_READ_STORE;
+								'h1F: state=`STATE_READ_BRANCH;
+								default: DoOp(`STATE_FETCH_OP);
+							endcase
+						end
+						default: DoOp(`STATE_FETCH_OP);
+					endcase
+				end
+			endcase
+			if (!readHigh) begin
+				operTypes[5:0]=operTypes[7:2];
+				operTypes[7:6]=`OPER_OMIT;
+				operandIdx=operandIdx+1;
+			end
+		end
+		`STATE_READ_STORE: begin
+			store=data;
+			case (operNum)
+				`OP_1: begin
+					case (op[4:0])
+						'h01,'h02: state=`STATE_READ_BRANCH;
+						default: DoOp(`STATE_FETCH_OP);
+					endcase
+				end
+				`OP_VAR: begin
+					case (op[4:0])
+						'h17: state=`STATE_READ_BRANCH;
+						default: DoOp(`STATE_FETCH_OP);
+					endcase
+				end
+				default: DoOp(`STATE_FETCH_OP);
+			endcase
+		end
+		`STATE_READ_BRANCH: begin
+			if (!readHigh) begin
+				if (data[6]) begin
+					branch=data[5:0];
+					negate=data[7];
+					DoOp(`STATE_FETCH_OP);
+				end else begin
+					branch[13:8]=data[5:0];
+					negate=data[7];
+					readHigh=1;
+				end
+			end else begin
+				branch[7:0]=data;
+				readHigh=0;
+				DoOp(`STATE_FETCH_OP);
+			end
+		end
+		default: begin
+			// NOTHING HERE
+		end
+	endcase
+	if (memStack!=0) begin
+		memStack=memStack-1;
+		address=memStackAddress[memStack];
+		if (memStack==0)
+			state=lastState;
+	end else begin
+		pc=pc+1;
+		address=pc;
+	end
+end
+
+endmodule
+
+module main();
+
+reg clk;
+reg [7:0] data;
+wire [16:0] address;
+
+initial
+begin
+	$display("Welcome");
+	$monitor("%h %h %h State:%h Op:%h Num:%h OperType:%h Operand:%h %h Store:%h Branch:%h memStack:%h %h %h", clk, data, address, b.state, b.op, b.operNum, b.operTypes, b.operand[0], b.operand[1], b.store, b.branch, b.memStack, b.memStackValue[0], b.memStackValue[1]);
+	data='hd4;
+	clk=1;
+	#1 clk=0;
+	data='h2f;
+	clk=1;
+	#1 clk=0;
+	data='h11;
+	clk=1;
+	#1 clk=0;
+	data='h62;
+	clk=1;
+	#1 clk=0;
+	data='h10;
+	clk=1;
+	#1 clk=0;
+	clk=1;
+	#1 clk=0;
+	clk=1;
+	#1 clk=0;
+	data='h93;
+	clk=1;
+	#1 clk=0;
+	clk=1;
+	#1 clk=0;
+	clk=1;
+	
+	
+	
+	//data='h05;
+	//clk=1;
+	//#1 clk=0;
+	//data='h02;
+	//clk=1;
+	//#1 clk=0;
+	//data='h00;
+	//clk=1;
+	//#1 clk=0;
+	//data='hd4;
+	//clk=1;
+	//#1 clk=0;
+	//clk=1;
+	//#1 clk=0;
+	//data='hd6;
+	//clk=1;
+	//#1 clk=0;
+	//data='h2f;
+	//clk=1;
+	//#1 clk=0;
+	//data='h03;
+	//clk=1;
+	//#1 clk=0;
+	//data='he8;
+	//clk=1;
+	//#1 clk=0;
+	//data='h02;
+	//clk=1;
+	//#1 clk=0;
+	//data='h00;
+	//clk=1;
+	//#1 clk=0;
+	//clk=1;
+	$finish;
+end
+
+boss b(clk, address, data);
+
+endmodule
