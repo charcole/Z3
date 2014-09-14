@@ -31,10 +31,11 @@ reg [2:0] operandIdx;
 reg [13:0] branch;
 reg [7:0] store;
 reg negate;
-reg delayedBranch;
 
-reg [15:0] localRegs [16:0];
-reg [15:0] stack[32:0];
+reg delayedBranch;
+reg [7:0] delayedRegNum;
+reg [15:0] delayedValue;
+
 reg [15:0] returnValue;
 
 `define OPER_LARGE 2'b00
@@ -53,7 +54,7 @@ reg [15:0] returnValue;
 `define STATE_READ_FUNCTION	8
 `define STATE_CALL_FUNCTION	9
 `define STATE_RET_FUNCTION	10
-`define STATE_BRANCH		11
+`define STATE_STORE_REGISTER 11
 
 `define OP_0	2'b00
 `define OP_1	2'b01
@@ -114,17 +115,16 @@ reg [16:0] memStackAddress [2:0];
 reg [7:0]  memStackValue [2:0];
 reg memStackWrite [2:0];
 
-reg [4:0] opsToRead;
-reg [4:0] currentLocal; 
-reg [17:0]  csStack;
+reg [6:0] opsToRead;
+reg [6:0] currentLocal; 
+reg [17:0] csStack;
+reg [17:0] stackAddress;
 
 initial
 begin
 	state=0;
 	readHigh=0;
 	pc=0;
-	localRegs[0]=1;
-	stack[0]='h8000;
 	memStack=0;
 	memStackWrite[0]=1;
 	globalsAddress='hF000;
@@ -134,12 +134,10 @@ begin
 	operTypes[3]=`OPER_OMIT;
 	operTypes[4]=`OPER_OMIT;
 	opsToRead=0;
-	csStack=64*1024;
+	stackAddress=64*1024;
+	csStack=65*1024;
 	forceDynamicRead=0;
 	writeEnable=0;
-	for (k=1; k<16; k=k+1) begin
-		localRegs[k]=9000;
-	end
 end
 
 task DoMemOp16;
@@ -175,50 +173,23 @@ task DoMemOp8;
 	end
 endtask
 
-task StoreRegister;
-	input [7:0] regNum;
-	input [15:0] value;
-	begin
-		$display("StoreReg %h in %d (%d)", value, regNum, localRegs[0]);
-		if (regNum>=16) begin
-			DoMemOp16(globalsAddress+2*(regNum-16), value, 1);
-		end else if (regNum==0) begin
-			stack[localRegs[0]]<=value;
-			localRegs[0]<=localRegs[0]+1;
-			state<=`STATE_FETCH_OP;
-			address<=pc;
-		end else begin
-			localRegs[regNum]<=value;
-			state<=`STATE_FETCH_OP;
-			address<=pc;
-		end
-	end
-endtask
-
 task StoreRegisterAndBranch;
 	input [7:0] regNum;
 	input [15:0] value;
 	input doBranch;
 	begin
-		if (regNum>=16) begin
-			DoMemOp16(globalsAddress+2*(regNum-16), value, 1);
-			delayedBranch<=doBranch;
-			lastState<=`STATE_BRANCH;
-		end else if (regNum==0) begin
-			stack[localRegs[0]]<=value;
-			localRegs[0]<=localRegs[0]+1;
-			DoBranch(doBranch);
-		end else begin
-			localRegs[regNum]<=value;
-			DoBranch(doBranch);
-		end
+		state<=`STATE_STORE_REGISTER;
+		delayedRegNum<=regNum;
+		delayedValue<=value;
+		delayedBranch<=doBranch;
+		phase<=0;
 	end
 endtask
 
 task StoreResult;
 	input [15:0] result;
 	begin
-		StoreRegister(store, result);
+		StoreRegisterAndBranch(store, result, negate); // negate means won't branch
 	end
 endtask
 
@@ -270,7 +241,7 @@ task DoBranch;
 	end
 endtask
 
-reg [15:0] temp;
+reg [16:0] temp;
 reg [15:0] temp2;
 reg [7:0] phase;
 
@@ -281,18 +252,19 @@ task LoadAndStore;
 	begin
 		if (phase==0) begin
 			address<=loadAddress;
+			phase<=phase+1;
 		end else if (phase==1) begin
 			if (word) begin
 				temp[15:8]<=data;
 				temp[7:0]<=0;
 				address<=loadAddress+1;
+				phase<=phase+1;
 			end else begin
 				StoreResult(data);
 			end
 		end else begin
-			StoreResult(temp|data);
+			StoreResult(temp[15:0]|data);
 		end
-		phase<=phase+1;
 	end
 endtask
 
@@ -354,7 +326,7 @@ task FindProp;
 	begin
 		case (phase)
 			0: begin address<=GetObjectAddr(operand[0])+7; phase<=phase+1; end
-			1: begin temp[15:8]<=data; temp[7:0]<=0; address<=GetObjectAddr(operand[0])+8; phase<=phase+1; end
+			1: begin temp[16]<=0; temp[15:8]<=data; temp[7:0]<=0; address<=GetObjectAddr(operand[0])+8; phase<=phase+1; end
 			2: begin temp[7:0]<=data; address<=temp|data; phase<=phase+1; end
 			3: begin temp<=temp+2*data+1; address<=temp+2*data+1; phase<=phase+1; end
 			4: begin
@@ -378,6 +350,55 @@ task FindProp;
 			5: begin temp2[15:8]=data; address<=temp+1; phase<=phase+1; end
 			6: begin StoreResult(temp2|data); end
 		endcase
+	end
+endtask
+
+task Pull;
+	begin
+		case (phase)
+			0: begin
+				address<=stackAddress-2;
+				forceDynamicRead<=1;
+				phase<=phase+1;
+			end
+			1: begin
+				stackAddress<=stackAddress-2;
+				temp[15:8]<=data;
+				temp[7:0]<=0;
+				address<=stackAddress-1;
+				forceDynamicRead<=1;
+				phase<=phase+1;
+			end
+			2: begin
+				forceDynamicRead<=0;
+				StoreRegisterAndBranch(operand[0], temp[15:0]|data, negate);
+			end
+		endcase
+	end
+endtask
+
+task RetPop;
+	begin
+		case (phase)
+			0: begin
+				address<=stackAddress-2;
+				forceDynamicRead<=1;
+				phase<=phase+1;
+			end
+			1: begin
+				stackAddress<=stackAddress-2;
+				temp[15:8]<=data;
+				temp[7:0]<=0;
+				address<=stackAddress-1;
+				forceDynamicRead<=1;
+				phase<=phase+1;
+			end
+			2: begin
+				forceDynamicRead<=0;
+				ReturnFunction(temp[15:0]|data);
+			end
+		endcase
+
 	end
 endtask
 
@@ -406,7 +427,7 @@ task DoOp;
 						// FIXME: Print first
 						ReturnFunction(1);
 					end
-					`OP0_RETPOP: ReturnFunction(stack[localRegs[0]-1]);
+					`OP0_RETPOP: RetPop();
 					`OP0_NEWLINE: begin $display("NEWLINE"); state<=`STATE_FETCH_OP; end
 					default: begin
 						$display("Unknown op");
@@ -447,7 +468,7 @@ task DoOp;
 					`OP2_AND: StoreResult(operand[0]&operand[1]);
 					`OP2_TESTATTR: TestAttr();
 					`OP2_SETATTR: SetAttr();
-					`OP2_STORE: StoreRegister(operand[0], operand[1]);
+					`OP2_STORE: StoreRegisterAndBranch(operand[0], operand[1], negate);
 					`OP2_LOADW: LoadAndStore(operand[0]+2*operand[1], store, 1);
 					`OP2_LOADB: LoadAndStore(operand[0]+operand[1], store, 0);
 					`OP2_GETPROP: FindProp();
@@ -455,7 +476,7 @@ task DoOp;
 					`OP2_SUB: StoreResult($signed(operand[0])-$signed(operand[1]));
 					`OP2_MUL: StoreResult($signed(operand[0])*$signed(operand[1]));
 					`OP2_DIV: StoreResult($signed(operand[0])/$signed(operand[1]));
-					`OP2_MOD: StoreResult($signed(operand[0])-$signed(operand[1]));
+					`OP2_MOD: StoreResult($signed(operand[0])%$signed(operand[1]));
 					default: begin
 						$display("Unknown op");
 						state<=`STATE_FETCH_OP;
@@ -473,8 +494,8 @@ task DoOp;
 					`OPVAR_PRINTCHAR: begin $display("PRINTCHAR:%d", $signed(operand[0])); state<=`STATE_FETCH_OP; end
 					`OPVAR_PRINTNUM: begin $display("PRINTNUM:%d", $signed(operand[0])); state<=`STATE_FETCH_OP; end
 					`OPVAR_RANDOM: StoreResult(0); // FIXME
-					`OPVAR_PUSH: StoreRegister(0, operand[0]);
-					`OPVAR_PULL: begin localRegs[0]<=localRegs[0]-1; #1; StoreRegister(operand[0], stack[localRegs[0]]); end
+					`OPVAR_PUSH: StoreRegisterAndBranch(0, operand[0], negate);
+					`OPVAR_PULL: Pull();
 					default: begin
 						$display("Unknown op");
 						state<=`STATE_FETCH_OP;
@@ -490,73 +511,83 @@ begin
 	case(state)
 		`STATE_CALL_FUNCTION: begin
 			case (phase)
-				0: begin address<=csStack+phase; writeEnable<=1; dataOut<=pc[16]; end
-				1: begin address<=csStack+phase; writeEnable<=1; dataOut<=pc[15:8]; end
-				2: begin address<=csStack+phase; writeEnable<=1; dataOut<=pc[7:0]; end
-				3: begin address<=csStack+phase; writeEnable<=1; dataOut<=store; end
-				4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34: begin
-					address<=csStack+phase; writeEnable<=1; dataOut<=localRegs[(phase-4)/2][15:8];
-				end
-				5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35: begin
-					address<=csStack+phase; writeEnable<=1; dataOut<=localRegs[(phase-4)/2][7:0];
-				end
-				36: begin
-					csStack<=csStack+36;
+				0: begin address<=csStack+phase; writeEnable<=1; dataOut<=pc[16]; phase<=phase+1; end
+				1: begin address<=csStack+phase; writeEnable<=1; dataOut<=pc[15:8]; phase<=phase+1; end
+				2: begin address<=csStack+phase; writeEnable<=1; dataOut<=pc[7:0]; phase<=phase+1; end
+				3: begin address<=csStack+phase; writeEnable<=1; dataOut<=stackAddress[16]; phase<=phase+1; end
+				4: begin address<=csStack+phase; writeEnable<=1; dataOut<=stackAddress[15:8]; phase<=phase+1; end
+				5: begin address<=csStack+phase; writeEnable<=1; dataOut<=stackAddress[7:0]; phase<=phase+1; end
+				6: begin address<=csStack+phase; writeEnable<=1; dataOut<=store; phase<=phase+1; end
+				7: begin
+					csStack<=csStack+37;
 					pc<=2*operand[0];
 					address<=2*operand[0];
 					state<=`STATE_READ_FUNCTION;
 					writeEnable<=0;
+					phase<=0;
 				end
 			endcase
-			phase<=phase+1;
 		end
 		`STATE_RET_FUNCTION: begin
 			case (phase)
-				0: begin csStack<=csStack-36; #1; address<=csStack+phase; forceDynamicRead<=1; end
-				1: begin pc[16]=data[0]; address<=csStack+phase; forceDynamicRead<=1; end
-				2: begin pc[15:8]=data; address<=csStack+phase; forceDynamicRead<=1; end
-				3: begin pc[7:0]=data; address<=csStack+phase; forceDynamicRead<=1; end
-				4: begin store=data; address<=csStack+phase; forceDynamicRead<=1; end
-				5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35: begin
-					address<=csStack+phase; forceDynamicRead<=1; localRegs[(phase-4)/2][15:8]<=data;
-				end
-				6,8,10,12,14,16,18,20,22,24,26,28,30,32,34: begin
-					address<=csStack+phase; forceDynamicRead<=1; localRegs[(phase-4)/2][7:0]<=data;
-				end
-				36: begin
-					localRegs[(phase-4)/2][7:0]<=data;
+				0: begin csStack<=csStack-37; address<=csStack-37+phase; forceDynamicRead<=1; phase<=phase+1; end
+				1: begin pc[16]=data[0]; address<=csStack+phase; forceDynamicRead<=1; phase<=phase+1; end
+				2: begin pc[15:8]=data; address<=csStack+phase; forceDynamicRead<=1; phase<=phase+1; end
+				3: begin pc[7:0]=data; address<=csStack+phase; forceDynamicRead<=1; phase<=phase+1; end
+				4: begin stackAddress[16]=data[0]; address<=csStack+phase; forceDynamicRead<=1; phase<=phase+1; end
+				5: begin stackAddress[15:8]=data; address<=csStack+phase; forceDynamicRead<=1; phase<=phase+1; end
+				6: begin stackAddress[7:0]=data; address<=csStack+phase; forceDynamicRead<=1; phase<=phase+1; end
+				7: begin
 					forceDynamicRead<=0;
-					#1;
-					StoreResult(returnValue);
+					StoreRegisterAndBranch(data, returnValue, negate);
 				end
 			endcase
-			phase<=phase+1;
 		end
 		`STATE_READ_FUNCTION: begin
-			if (opsToRead==0) begin
-				if (data==0)
-					state<=`STATE_FETCH_OP;
-				opsToRead<=2*data;
-				currentLocal<=2;
-			end else begin
-				if (currentLocal&1)
-					localRegs[currentLocal>>1][7:0]<=data;
-				else
-					localRegs[currentLocal>>1][15:8]<=data;
-				if (opsToRead==1) begin
-					if (operTypes[1]!=`OPER_OMIT)
-						localRegs[1]<=operand[1];
-					if (operTypes[2]!=`OPER_OMIT)
-						localRegs[2]<=operand[2];
-					if (operTypes[3]!=`OPER_OMIT)
-						localRegs[3]<=operand[3];
-					state<=`STATE_FETCH_OP;
+			case (phase)
+				0: begin
+					if (data==0) begin
+						state<=`STATE_FETCH_OP;
+					end else begin
+						opsToRead<=4*data-1;
+						phase<=phase+1;
+					end
+					currentLocal<=0;
+					pc<=pc+1;
+					address<=pc+1;
 				end
-				currentLocal<=currentLocal+1;
-				opsToRead<=opsToRead-1;
-			end
-			pc<=pc+1;
-			address<=pc+1;
+				1: begin
+					if (opsToRead&1) begin
+						dataOut<=data;
+						address<=csStack+7+currentLocal;
+						writeEnable<=1;
+						currentLocal<=currentLocal+1;
+					end else begin
+						pc<=pc+1;
+						address<=pc+1;
+						writeEnable<=0;
+					end
+					if (opsToRead==1) begin
+						phase<=phase+1;
+						currentLocal<=0;
+					end
+					opsToRead<=opsToRead-1;
+				end
+				2: begin
+					if (operTypes[(currentLocal>>1)+1]==`OPER_OMIT) begin
+						state<=`STATE_FETCH_OP;
+						writeEnable<=0;
+						pc<=pc+1;
+						address<=pc+1;
+						phase<=0;
+					end else begin
+						dataOut<=currentLocal[0]?operand[(currentLocal>>1)+1][7:0]:operand[(currentLocal>>1)+1][15:8];
+						writeEnable<=1;
+						address<=csStack+7+currentLocal;
+					end
+					currentLocal<=currentLocal+1;
+				end
+			endcase
 		end
 		`STATE_FETCH_OP: begin
 			curPC<=pc;
@@ -638,29 +669,37 @@ begin
 					address<=pc+1;
 				end
 				`OPER_VARI: begin
-					if (!readHigh) begin
-						pc<=pc+1;		
-						if (data>=16) begin
-							DoMemOp16(globalsAddress+2*(data-16), 0, 0);
-							lastState<=state; // FIXME: Does this actually work?
-							readHigh<=1;
-						end else if (data==0) begin
-							$display("ReadStack (%d)", localRegs[0]);
-							localRegs[0]<=localRegs[0]-1;
-							operand[operandIdx]<=stack[localRegs[0]-1];
-							address<=pc+1;
-							operandIdx<=operandIdx+1;
-						end else begin
-							operand[operandIdx]<=localRegs[data];
-							address<=pc+1;
-							operandIdx<=operandIdx+1;
+					case (phase)
+						0: begin
+							if (data>=16) begin
+								temp<=globalsAddress+2*(data-16);
+								address<=globalsAddress+2*(data-16);
+							end else if (data==0) begin
+								temp<=stackAddress-2;
+								address<=stackAddress-2;
+								stackAddress<=stackAddress-2;
+								forceDynamicRead<=1;
+							end else begin
+								temp<=csStack+7+2*(data-1);
+								address<=csStack+7+2*(data-1);
+								forceDynamicRead<=1;
+							end
+							pc<=pc+1;		
+							phase<=phase+1;
 						end
-					end else if (memStack==0) begin
-						operand[operandIdx]<=(memStackValue[0]<<8)|memStackValue[1];
-						readHigh<=0;
-						address<=pc;
-						operandIdx<=operandIdx+1;
-					end
+						1: begin
+							operand[operandIdx]<=(data<<8);
+							address<=temp+1;
+							phase<=phase+1;
+						end
+						2: begin
+							forceDynamicRead<=0;
+							operand[operandIdx]<=operand[operandIdx]|data;
+							address<=pc;
+							operandIdx<=operandIdx+1;
+							phase<=0;
+						end
+					endcase
 				end
 				`OPER_OMIT: begin
 					case (operNum)
@@ -746,11 +785,36 @@ begin
 				address<=pc;
 			end
 		end
-		`STATE_BRANCH: begin
-			DoBranch(delayedBranch);
-		end
-		default: begin
-			// NOTHING HERE
+		`STATE_STORE_REGISTER: begin
+			case (phase)
+				0: begin
+					if (delayedRegNum>=16) begin
+						temp<=globalsAddress+2*(delayedRegNum-16);
+						address<=globalsAddress+2*(delayedRegNum-16);
+					end else if (delayedRegNum==0) begin
+						temp<=stackAddress;
+						address<=stackAddress;
+						stackAddress<=stackAddress+2;
+					end else begin
+						temp<=csStack+7+2*(delayedRegNum-1);
+						address<=csStack+7+2*(delayedRegNum-1);
+					end
+					dataOut<=delayedValue[15:8];
+					writeEnable<=1;
+					phase<=phase+1;
+				end
+				1: begin
+					dataOut<=delayedValue[7:0];
+					address<=temp+1;
+					writeEnable<=1;
+					phase<=phase+1;
+				end
+				2: begin
+					DoBranch(delayedBranch);
+					writeEnable<=0;
+					phase<=0;
+				end
+			endcase
 		end
 	endcase
 end
@@ -777,14 +841,14 @@ begin
 	readData=$fread(mem, file);
 	$display("File read:%h %d", file, readData);
 	$fclose(file);
-	//$monitor("%h %h %h State:%h Op:%h Num:%h OperType:%h%h%h%h OperIdx:%d Operand:%h %h Store:%h Branch:%h memStack:%h %h %h", clk, data, address, b.state, b.op, b.operNum, b.operTypes[0], b.operTypes[1], b.operTypes[2], b.operTypes[3], b.operandIdx, b.operand[0], b.operand[1], b.store, b.branch, b.memStack, b.memStackValue[0], b.memStackValue[1]);
+	//$monitor("%h %h %h State:%d(%d) Op:%h Num:%h OperType:%h%h%h%h OperIdx:%d Operand:%h %h Store:%h Branch:%h memStack:%h %h %h", clk, data, address, b.state, b.phase, b.op, b.operNum, b.operTypes[0], b.operTypes[1], b.operTypes[2], b.operTypes[3], b.operandIdx, b.operand[0], b.operand[1], b.store, b.branch, b.memStack, b.memStackValue[0], b.memStackValue[1]);
 	for (i=0; i<64*1024; i=i+1)
 		dynamicMem[i]=mem[i];
 	b.pc='h5675;
 	b.globalsAddress='h275c;
 	b.objectTable='h2c8;
 	data=mem[b.pc];
-	for (i=0; i</*505*/8000; i=i+1) begin
+	for (i=0; i</*505*/10000; i=i+1) begin
 		clk=1;
 		#5 clk=0;
 		if (writeEnable) begin
