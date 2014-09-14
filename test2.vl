@@ -1,0 +1,655 @@
+module boss(clk, data, address, writeEnable, forceDynamicRead, dataOut);
+
+input clk;
+input [7:0] data;
+
+output [16:0] address;
+output writeEnable;
+output forceDynamicRead;
+output [7:0] dataOut;
+
+reg [16:0] address;
+reg writeEnable;
+reg forceDynamicRead;
+reg [7:0] dataOut;
+
+reg [3:0] state;
+reg [3:0] lastState;
+
+reg [16:0] pc;
+reg [16:0] curPC;
+reg [16:0] globalsAddress;
+
+reg readHigh;
+
+reg [4:0] op;
+reg [1:0] operNum;
+reg [0:1] operTypes [4:0];
+reg [15:0] operand [3:0];
+reg [2:0] operandIdx;
+reg [13:0] branch;
+reg [7:0] store;
+reg negate;
+
+reg [15:0] localRegs [16:0];
+reg [15:0] stack[32:0];
+reg [15:0] returnValue;
+
+`define OPER_LARGE 2'b00
+`define OPER_SMALL 2'b01
+`define OPER_VARI  2'b10
+`define OPER_OMIT  2'b11
+
+`define STATE_FETCH_OP		0
+`define STATE_READ_TYPES	1
+`define STATE_READ_OPERS	2
+`define STATE_READ_STORE	3
+`define STATE_READ_BRANCH	4
+`define STATE_DO_OP			5
+`define STATE_READ_REG		6
+`define STATE_WRITE_MEM		7
+`define STATE_READ_FUNCTION	8
+`define STATE_CALL_FUNCTION	9
+`define STATE_RET_FUNCTION	10
+
+`define OP_0	2'b00
+`define OP_1	2'b01
+`define OP_2	2'b10
+`define OP_VAR	2'b11
+
+`define OP0_PRINT	'h2
+`define OP0_NEWLINE	'hB
+
+`define OP1_JZ		'h0
+`define OP1_RET		'hB
+`define OP1_JUMP	'hC
+
+`define OP2_JE		'h1
+`define OP2_JL		'h2
+`define OP2_JG		'h3
+`define OP2_DEC_CHK	'h4
+`define OP2_INC_CHK	'h5
+`define OP2_OR		'h8
+`define OP2_AND		'h9
+`define OP2_STORE	'hD
+`define OP2_LOADW	'hF
+`define OP2_LOADB	'h10
+`define OP2_ADD		'h14
+`define OP2_SUB		'h15
+`define OP2_MUL		'h16
+`define OP2_DIV		'h17
+`define OP2_MOD		'h18
+
+`define OPVAR_CALL   'h0
+`define OPVAR_STOREW 'h1
+`define OPVAR_STOREB 'h2
+`define OPVAR_PRINTNUM 'h6
+`define OPVAR_RANDOM 'h7
+
+reg [8:0] k;
+
+reg [1:0]  memStack;
+reg [16:0] memStackAddress [2:0];
+reg [7:0]  memStackValue [2:0];
+reg memStackWrite [2:0];
+
+reg [4:0] opsToRead;
+reg [4:0] currentLocal; 
+reg [17:0]  csStack;
+
+initial
+begin
+	state=0;
+	readHigh=0;
+	pc=0;
+	localRegs[0]=1;
+	stack[0]='h8000;
+	memStack=0;
+	memStackWrite[0]=1;
+	globalsAddress='hF000;
+	operTypes[0]=`OPER_OMIT;
+	operTypes[1]=`OPER_OMIT;
+	operTypes[2]=`OPER_OMIT;
+	operTypes[3]=`OPER_OMIT;
+	operTypes[4]=`OPER_OMIT;
+	opsToRead=0;
+	csStack=64*1024;
+	forceDynamicRead=0;
+	writeEnable=0;
+	for (k=1; k<16; k=k+1) begin
+		localRegs[k]=9000;
+	end
+end
+
+task DoMemOp16;
+	input [16:0] location;
+	input [15:0] value;
+	input bWrite;
+	begin
+		$display("MemopW%d: Value:%h Location:%h", bWrite, value, location);
+		memStackAddress[0]<=location;
+		memStackValue[0]<=value[15:8];
+		memStackWrite[0]<=bWrite;
+		memStack<=1;
+		lastState<=`STATE_FETCH_OP;
+		state<=`STATE_WRITE_MEM;
+		address<=location+1;
+		dataOut<=value[7:0];
+		writeEnable<=bWrite;
+	end
+endtask
+
+task DoMemOp8;
+	input [16:0] location;
+	input [7:0] value;
+	input bWrite;
+	begin
+		$display("MemopB%d: Value:%h Location:%h", bWrite, value, location);
+		memStack<=0;
+		lastState<=`STATE_FETCH_OP;
+		state<=`STATE_WRITE_MEM;
+		address<=location;
+		dataOut<=value[7:0];
+		writeEnable<=bWrite;
+	end
+endtask
+
+task StoreRegister;
+	input [7:0] regNum;
+	input [15:0] value;
+	begin
+		$display("StoreReg %h in %d (%d)", value, regNum, localRegs[0]);
+		if (regNum>=16) begin
+			DoMemOp16(globalsAddress+2*regNum-16, value, 1);
+		end else if (regNum==0) begin
+			stack[localRegs[0]]<=value;
+			localRegs[0]<=localRegs[0]+1;
+			state<=`STATE_FETCH_OP;
+		end else begin
+			localRegs[regNum]<=value;
+			state<=`STATE_FETCH_OP;
+		end
+	end
+endtask
+
+task StoreResult;
+	input [15:0] result;
+	begin
+		StoreRegister(store, result);
+	end
+endtask
+
+task ReturnFunction;
+	input [15:0] value;
+	begin
+		returnValue<=value;
+		phase<=0;
+		state<=`STATE_RET_FUNCTION;
+	end
+endtask
+
+task CallFunction;
+	begin
+		if (operand[0]==0) begin
+			ReturnFunction(0);
+		end else begin
+			phase<=0;
+			state<=`STATE_CALL_FUNCTION;
+		end
+	end
+endtask
+
+task DoBranch;
+	input result;
+	begin
+		if ((!result)==negate) begin
+			if (branch==0) begin
+				ReturnFunction(0);
+			end else if (branch==1) begin
+				ReturnFunction(1);
+			end else begin
+				pc<=$signed(pc)+$signed(branch)-2;
+				address<=$signed(pc)+$signed(branch)-2;
+			end
+		end
+		state<=`STATE_FETCH_OP;
+	end
+endtask
+
+reg [15:0] temp;
+reg [7:0] phase;
+
+task LoadAndStore;
+	input [16:0] loadAddress;
+	input [7:0]  storeLocation;
+	input		 word;
+	begin
+		if (phase==0) begin
+			address<=loadAddress;
+		end else if (phase==1) begin
+			if (word) begin
+				temp[15:8]<=data;
+				temp[7:0]<=0;
+				address<=loadAddress+1;
+			end else begin
+				StoreResult(data);
+				address<=pc;
+			end
+		end else begin
+			StoreResult(temp|data);
+			address<=pc;
+		end
+		phase<=phase+1;
+	end
+endtask
+
+task IncChk;
+	input [2:0] offset;
+	begin
+		if (phase==0) begin
+			if (operand[0]>=16) begin
+				DoMemOp16(globalsAddress+2*(operand[0]-16), 0, 0);
+			end else if (operand[0]==0) begin
+				stack[localRegs[0]-1]<=$signed(stack[localRegs[0]-1])+$signed(offset);
+				DoBranch($signed(stack[localRegs[0]-1])+$signed(offset)==temp);
+			end else begin
+				localRegs[operand[0]]<=$signed(localRegs[operand[0]])+$signed(offset);
+				DoBranch($signed(localRegs[operand[0]])+$signed(offset)==temp);
+			end
+		end else begin
+			StoreRegister(operand[0],$signed((memStackValue[0]<<8)|memStackValue[1])+$signed(offset));
+			DoBranch($signed((memStackValue[0]<<8)|memStackValue[1])+$signed(offset)==operand[1]);
+		end
+		phase<=phase+1;
+	end
+endtask
+
+task DoOp;
+	input nextState;
+	begin
+		case (operNum)
+			`OP_0: begin
+				if (phase==0)
+					$display("Doing op0:%d Store:%h Branch:%h/%d", op, operand[0], store, branch, negate);
+				case (op)
+					`OP0_PRINT: begin
+						if (pc[0]==curPC[0] || !(data&'h80)) begin
+							pc<=pc+1;
+							address<=pc+1;
+						end else begin
+							state<=`STATE_FETCH_OP;
+							pc<=pc+2;
+							address<=pc+2;
+						end
+					end
+					`OP0_NEWLINE: begin $display("NEWLINE"); state<=`STATE_FETCH_OP; end
+					default: begin
+						$display("Unknown op");
+						state<=`STATE_FETCH_OP;
+					end
+				endcase
+			end
+			`OP_1: begin
+				if (phase==0)
+					$display("Doing op1:%d Operands:%h Store:%h Branch:%h/%d", op, operand[0], store, branch, negate);
+				case (op)
+					`OP1_JZ: DoBranch(operand[0]==0);
+					`OP1_RET: ReturnFunction(operand[0]);
+					`OP1_JUMP: begin pc<=$signed(pc)+$signed(operand[0])-2; address<=$signed(pc)+$signed(operand[0])-2; state<=`STATE_FETCH_OP; end
+					default: begin
+						$display("Unknown op");
+						state<=`STATE_FETCH_OP;
+					end
+				endcase
+			end
+			`OP_2: begin
+				if (phase==0)
+					$display("Doing op2:%d Operands:%h %h Store:%h Branch:%h/%d/%h", op, operand[0], operand[1], store, branch, negate, $signed(pc)+$signed(branch-2));
+				case (op)
+					`OP2_JE: DoBranch(operand[0]==operand[1]);
+					`OP2_JL: DoBranch($signed(operand[0])<$signed(operand[1]));
+					`OP2_JG: DoBranch($signed(operand[0])>$signed(operand[1]));
+					`OP2_DEC_CHK: IncChk(-1);
+					`OP2_INC_CHK: IncChk(1);
+					`OP2_OR: StoreResult(operand[0]|operand[1]);
+					`OP2_AND: StoreResult(operand[0]&operand[1]);
+					`OP2_STORE: StoreRegister(operand[0], operand[1]);
+					`OP2_LOADW: LoadAndStore(operand[0]+2*operand[1], store, 1);
+					`OP2_LOADB: LoadAndStore(operand[0]+operand[1], store, 0);
+					`OP2_ADD: StoreResult($signed(operand[0])+$signed(operand[1]));
+					`OP2_SUB: StoreResult($signed(operand[0])-$signed(operand[1]));
+					`OP2_MUL: StoreResult($signed(operand[0])*$signed(operand[1]));
+					`OP2_DIV: StoreResult($signed(operand[0])/$signed(operand[1]));
+					`OP2_MOD: StoreResult($signed(operand[0])-$signed(operand[1]));
+					default: begin
+						$display("Unknown op");
+						state<=`STATE_FETCH_OP;
+					end
+				endcase
+			end
+			`OP_VAR: begin
+				if (phase==0)
+					$display("Doing opvar:%d Operands:%h %h %h %h Store:%h Branch:%h/%d/%h", op, operand[0], operand[1], operand[2], operand[3], store, branch, negate, $signed(pc)+$signed(branch-2));
+				case (op)
+					`OPVAR_CALL: CallFunction();
+					`OPVAR_STOREW: DoMemOp16(operand[0]+2*operand[1],operand[2], 1);
+					`OPVAR_STOREB: DoMemOp8(operand[0]+operand[1],operand[2], 1);
+					`OPVAR_PRINTNUM: begin $display("PRINTNUM:%d", $signed(operand[0])); state<=`STATE_FETCH_OP; end
+					`OPVAR_RANDOM: StoreResult(0); // FIXME
+					default: begin
+						$display("Unknown op");
+						state<=`STATE_FETCH_OP;
+					end
+				endcase
+			end
+		endcase
+	end
+endtask
+
+always @ (posedge clk)
+begin
+	case(state)
+		`STATE_CALL_FUNCTION: begin
+			case (phase)
+				0: begin address<=csStack+phase; writeEnable<=1; dataOut<=pc[16]; end
+				1: begin address<=csStack+phase; writeEnable<=1; dataOut<=pc[15:8]; end
+				2: begin address<=csStack+phase; writeEnable<=1; dataOut<=pc[7:0]; end
+				3: begin address<=csStack+phase; writeEnable<=1; dataOut<=store; end
+				4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34: begin
+					address<=csStack+phase; writeEnable<=1; dataOut<=localRegs[(phase-4)/2][15:8];
+				end
+				5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35: begin
+					address<=csStack+phase; writeEnable<=1; dataOut<=localRegs[(phase-4)/2][7:0];
+				end
+				36: begin
+					csStack<=csStack+36;
+					pc<=2*operand[0];
+					address<=2*operand[0];
+					state<=`STATE_READ_FUNCTION;
+					writeEnable<=0;
+				end
+			endcase
+			phase<=phase+1;
+		end
+		`STATE_RET_FUNCTION: begin
+			case (phase)
+				0: begin csStack<=csStack-36; #1; address<=csStack+phase; forceDynamicRead<=1; end
+				1: begin pc[16]=data[0]; address<=csStack+phase; forceDynamicRead<=1; end
+				2: begin pc[15:8]=data; address<=csStack+phase; forceDynamicRead<=1; end
+				3: begin pc[7:0]=data; address<=csStack+phase; forceDynamicRead<=1; end
+				4: begin store=data; address<=csStack+phase; forceDynamicRead<=1; end
+				5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35: begin
+					address<=csStack+phase; forceDynamicRead<=1; localRegs[(phase-4)/2][15:8]<=data;
+				end
+				6,8,10,12,14,16,18,20,22,24,26,28,30,32,34: begin
+					address<=csStack+phase; forceDynamicRead<=1; localRegs[(phase-4)/2][7:0]<=data;
+				end
+				36: begin
+					localRegs[(phase-4)/2][7:0]<=data;
+					forceDynamicRead<=0;
+					#1;
+					StoreResult(returnValue);
+					address<=pc;
+				end
+			endcase
+			phase<=phase+1;
+		end
+		`STATE_READ_FUNCTION: begin
+			if (opsToRead==0) begin
+				opsToRead<=2*data;
+				currentLocal<=2;
+			end else begin
+				if (currentLocal&1)
+					localRegs[currentLocal>>1][7:0]<=data;
+				else
+					localRegs[currentLocal>>1][15:8]<=data;
+				if (opsToRead==1) begin
+					if (operTypes[1]!=`OPER_OMIT)
+						localRegs[1]<=operand[1];
+					if (operTypes[2]!=`OPER_OMIT)
+						localRegs[2]<=operand[2];
+					if (operTypes[3]!=`OPER_OMIT)
+						localRegs[3]<=operand[3];
+					state<=`STATE_FETCH_OP;
+				end
+				currentLocal<=currentLocal+1;
+				opsToRead<=opsToRead-1;
+			end
+			pc<=pc+1;
+			address<=pc+1;
+		end
+		`STATE_FETCH_OP: begin
+			curPC<=pc;
+			phase<=0;
+			$display("Fetching op at %h", pc);
+			case (data[7:6])
+				2'b10: begin
+					// short form
+					op[4:0]<=data[3:0];
+					operTypes[0]<=data[5:4];
+					operTypes[1]<=`OPER_OMIT;
+					operTypes[2]<=`OPER_OMIT;
+					operTypes[3]<=`OPER_OMIT;
+					if (data[5:4]==2'b11) begin
+						operNum[1:0]<=`OP_0;
+						case (op)
+							'h05,'h06,'h0D,'h0F: state<=`STATE_READ_BRANCH;
+							default: state<=`STATE_DO_OP;
+						endcase
+					end else begin
+						operNum[1:0]<=`OP_1;
+						state<=`STATE_READ_OPERS;
+					end
+				end
+				2'b11: begin
+					// variable form
+					op[4:0]<=data[4:0];
+					operNum[1:0]<=(data[5]?`OP_VAR:`OP_2);
+					state<=`STATE_READ_TYPES;
+				end
+				default: begin
+					// long form
+					op[4:0]<=data[4:0];
+					operNum[1:0]<=`OP_2;
+					operTypes[0]<=(data[6] ? `OPER_VARI : `OPER_SMALL);
+					operTypes[1]<=(data[5] ? `OPER_VARI : `OPER_SMALL);
+					operTypes[2]<=`OPER_OMIT;
+					operTypes[3]<=`OPER_OMIT;
+					state<=`STATE_READ_OPERS;
+				end
+			endcase
+			operandIdx<=0;
+			pc<=pc+1;
+			address<=pc+1;
+		end
+		`STATE_READ_TYPES: begin
+			operTypes[0]<=data[7:6];
+			operTypes[1]<=data[5:4];
+			operTypes[2]<=data[3:2];
+			operTypes[3]<=data[1:0];
+			state<=`STATE_READ_OPERS;
+			pc<=pc+1;
+			address<=pc+1;
+		end
+		`STATE_READ_OPERS: begin
+			case (operTypes[operandIdx])
+				`OPER_SMALL: begin
+					operand[operandIdx]<=data[7:0];
+					pc<=pc+1;
+					address<=pc+1;
+					operandIdx<=operandIdx+1;
+				end
+				`OPER_LARGE: begin
+					if (!readHigh) begin
+						operand[operandIdx][15:8]<=data[7:0];
+						readHigh<=1;
+					end else begin
+						operand[operandIdx][7:0]<=data[7:0];
+						operandIdx<=operandIdx+1;
+						readHigh<=0;
+					end
+					pc<=pc+1;
+					address<=pc+1;
+				end
+				`OPER_VARI: begin
+					if (!readHigh) begin
+						pc<=pc+1;		
+						if (data>=16) begin
+							DoMemOp16(globalsAddress+2*(data-16), 0, 0);
+							lastState<=state; // FIXME: Does this actually work?
+							readHigh<=1;
+						end else if (data==0) begin
+							$display("ReadStack (%d)", localRegs[0]);
+							localRegs[0]<=localRegs[0]-1;
+							operand[operandIdx]<=stack[localRegs[0]-1];
+							address<=pc+1;
+							operandIdx<=operandIdx+1;
+						end else begin
+							operand[operandIdx]<=localRegs[data];
+							address<=pc+1;
+							operandIdx<=operandIdx+1;
+						end
+					end else if (memStack==0) begin
+						operand[operandIdx]<=(memStackValue[0]<<8)|memStackValue[1];
+						readHigh<=0;
+						address<=pc;
+						operandIdx<=operandIdx+1;
+					end
+				end
+				`OPER_OMIT: begin
+					case (operNum)
+						`OP_1: begin
+							case (op[4:0])
+								'h01,'h02,'h03,'h04,'h08,'h0E,'h0F: state<=`STATE_READ_STORE;
+								'h00: state<=`STATE_READ_BRANCH;
+								default: state<=`STATE_DO_OP;
+							endcase
+						end
+						`OP_2: begin
+							case (op[4:0])
+								'h08,'h09,'h0F,'h10,'h11,'h12,'h13,'h14,'h15,'h16,'h17,'h18,'h19: state<=`STATE_READ_STORE;
+								'h01,'h02,'h03,'h04,'h05,'h06,'h07,'h0A: state<=`STATE_READ_BRANCH;
+								default: state<=`STATE_DO_OP;
+							endcase
+						end
+						`OP_VAR: begin
+							case (op[4:0])
+								'h00,'h07,'h0C,'h16,'h17,'h18: state<=`STATE_READ_STORE;
+								'h1F: state<=`STATE_READ_BRANCH;
+								default: state<=`STATE_DO_OP;
+							endcase
+						end
+						default: state<=`STATE_DO_OP;
+					endcase
+					address<=pc;
+				end
+			endcase
+		end
+		`STATE_READ_STORE: begin
+			store<=data;
+			case (operNum)
+				`OP_1: begin
+					case (op[4:0])
+						'h01,'h02: state<=`STATE_READ_BRANCH;
+						default: state<=`STATE_DO_OP;
+					endcase
+				end
+				`OP_VAR: begin
+					case (op[4:0])
+						'h17: state<=`STATE_READ_BRANCH;
+						default: state<=`STATE_DO_OP;
+					endcase
+				end
+				default: state<=`STATE_DO_OP;
+			endcase
+			pc<=pc+1;
+			address<=pc+1;
+		end
+		`STATE_READ_BRANCH: begin
+			if (!readHigh) begin
+				if (data[6]) begin
+					branch<=data[5:0];
+					negate<=data[7];
+					state<=`STATE_DO_OP;
+				end else begin
+					branch[13:8]<=data[5:0];
+					negate<=data[7];
+					readHigh<=1;
+				end
+			end else begin
+				branch[7:0]<=data;
+				readHigh<=0;
+				state<=`STATE_DO_OP;
+			end
+			pc<=pc+1;
+			address<=pc+1;
+		end
+		`STATE_DO_OP: begin
+			DoOp(`STATE_FETCH_OP);
+		end
+		`STATE_WRITE_MEM: begin
+			memStackValue[memStack]<=data;
+			if (memStack>0) begin
+				address<=memStackAddress[0];
+				writeEnable<=memStackWrite[0];
+				dataOut<=memStackValue[0];
+				memStack<=0;
+			end else begin
+				writeEnable<=0;
+				state<=lastState;
+				address<=pc;
+			end
+		end
+		default: begin
+			// NOTHING HERE
+		end
+	endcase
+end
+
+endmodule
+
+module main();
+
+reg clk;
+reg [7:0] data;
+wire [16:0] address;
+wire writeEnable;
+wire forceDynamicRead;
+wire [7:0] dataOut;
+
+integer file,readData,i;
+reg [7:0] mem [128*1024:0];
+reg [7:0] dynamicMem [128*1024:0];
+
+initial
+begin
+	$display("Welcome");
+	file=$fopen("Planetfa.z3","rb");
+	readData=$fread(mem, file);
+	$display("File read:%h %d", file, readData);
+	$fclose(file);
+	//$monitor("%h %h %h State:%h Op:%h Num:%h OperType:%h%h%h%h OperIdx:%d Operand:%h %h Store:%h Branch:%h memStack:%h %h %h", clk, data, address, b.state, b.op, b.operNum, b.operTypes[0], b.operTypes[1], b.operTypes[2], b.operTypes[3], b.operandIdx, b.operand[0], b.operand[1], b.store, b.branch, b.memStack, b.memStackValue[0], b.memStackValue[1]);
+	for (i=0; i<64*1024; i=i+1)
+		dynamicMem[i]=mem[i];
+	b.pc='h5675;
+	b.globalsAddress='h275c;
+	data=mem[b.pc];
+	for (i=0; i</*505*/2000; i=i+1) begin
+		clk=1;
+		#5 clk=0;
+		if (writeEnable) begin
+			dynamicMem[address]=dataOut;
+		end else if (forceDynamicRead) begin
+			data=dynamicMem[address];
+		end else begin
+			data=mem[address];
+		end
+		$display("Mem req: %h WE:%d FD:%d D:%h DO:%h", address, writeEnable, forceDynamicRead, data, dataOut);
+	end
+	$finish;
+end
+
+boss b(clk, data, address, writeEnable, forceDynamicRead, dataOut);
+
+endmodule
+
