@@ -1,0 +1,38 @@
+2785 (61%)  - Procedual
+2146 (47%)	- DoOp moved to state
+2082 (45%)	- + Delayed assignment
+1508 (33%)  - + Oper read assignment
+1531 (33%)	- + Fix memStack stuff (ish)
+
+2145 (47%)		- Delayed assignment fixes + added print + better testbed + data change oper
+24882 (540%) 	- Routines (32 deep) and more ops
+11460 (222%)	- Routines (4 deep) => Stack needs moving into memory. On chip?
+4257 (92%)		- Removed Routines
+2451 (53%)		- Removed Routines + new ops
+2451 (53%)		- Removed Routines + new ops
+2529 (45%)		- + 0Ops
+4266 (93%)		- + 2Ops
+3653 (79%)		- + 2Ops (-LoadB/LoadW)
+2785 (60%)		- + 2Ops (-IncChk)
+
+6476 (141%)		- Enough ops to get to first input read
+266				- No DoOp logic (probably everything compiled out)
+1644 (36%)		- + 0Ops
+3023 (66%)		- + 1Ops
+4183 (91%)		- + VarOps
+6669 (145%)		- Back to full with fixed MOD instruction
+6597 (143%)		- + Simple DoBranch instructions moved to state
+5460 (118%)		- + Reduce number stack from 32->4 (FIXME!)
+4991 (108%)		- + Remove MOD (not used)
+4626 (100%)		- + Remove DIV (could do less efficiently?)
+
+3271 (71%)		- Removed localRegs + stack from internal state (and -MOD) + StoreRegister now a state
+
+Moya
+Ellie/Ally
+Laura
+Nicky
+Sue
+Faith
+
+Jeff
