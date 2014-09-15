@@ -13,31 +13,6 @@ reg writeEnable;
 reg forceDynamicRead;
 reg [7:0] dataOut;
 
-reg [3:0] state;
-reg [3:0] lastState;
-
-reg [16:0] pc;
-reg [16:0] curPC;
-reg [16:0] globalsAddress;
-reg [16:0] objectTable;
-
-reg readHigh;
-
-reg [4:0] op;
-reg [1:0] operNum;
-reg [0:1] operTypes [4:0];
-reg [15:0] operand [3:0];
-reg [2:0] operandIdx;
-reg [13:0] branch;
-reg [7:0] store;
-reg negate;
-
-reg delayedBranch;
-reg [7:0] delayedRegNum;
-reg [15:0] delayedValue;
-
-reg [15:0] returnValue;
-
 `define OPER_LARGE 2'b00
 `define OPER_SMALL 2'b01
 `define OPER_VARI  2'b10
@@ -49,12 +24,10 @@ reg [15:0] returnValue;
 `define STATE_READ_STORE	3
 `define STATE_READ_BRANCH	4
 `define STATE_DO_OP			5
-`define STATE_READ_REG		6
-`define STATE_WRITE_MEM		7
-`define STATE_READ_FUNCTION	8
-`define STATE_CALL_FUNCTION	9
-`define STATE_RET_FUNCTION	10
-`define STATE_STORE_REGISTER 11
+`define STATE_READ_FUNCTION	6
+`define STATE_CALL_FUNCTION	7
+`define STATE_RET_FUNCTION	8
+`define STATE_STORE_REGISTER 9
 
 `define OP_0	2'b00
 `define OP_1	2'b01
@@ -108,25 +81,43 @@ reg [15:0] returnValue;
 `define OPVAR_PUSH 'h8
 `define OPVAR_PULL 'h9
 
-reg [8:0] k;
+reg [3:0] state;
 
-reg [1:0]  memStack;
-reg [16:0] memStackAddress [2:0];
-reg [7:0]  memStackValue [2:0];
-reg memStackWrite [2:0];
+reg [16:0] pc;
+reg [16:0] curPC;
+reg [16:0] globalsAddress;
+reg [16:0] objectTable;
+
+reg readHigh;
+
+reg [4:0] op;
+reg [1:0] operNum;
+reg [0:1] operTypes [4:0];
+reg [15:0] operand [3:0];
+reg [2:0] operandIdx;
+reg [13:0] branch;
+reg [7:0] store;
+reg negate;
+
+reg delayedBranch;
+reg [7:0] delayedRegNum;
+reg [15:0] delayedValue;
+
+reg [15:0] returnValue;
 
 reg [6:0] opsToRead;
 reg [6:0] currentLocal; 
 reg [17:0] csStack;
 reg [17:0] stackAddress;
 
+reg [16:0] temp;
+reg [3:0] phase;
+
 initial
 begin
 	state=0;
 	readHigh=0;
 	pc=0;
-	memStack=0;
-	memStackWrite[0]=1;
 	globalsAddress='hF000;
 	operTypes[0]=`OPER_OMIT;
 	operTypes[1]=`OPER_OMIT;
@@ -140,36 +131,22 @@ begin
 	writeEnable=0;
 end
 
-task DoMemOp16;
-	input [16:0] location;
-	input [15:0] value;
-	input bWrite;
+task StoreB;
 	begin
-		$display("MemopW%d: Value:%h Location:%h", bWrite, value, location);
-		memStackAddress[0]<=location;
-		memStackValue[0]<=value[15:8];
-		memStackWrite[0]<=bWrite;
-		memStack<=1;
-		lastState<=`STATE_FETCH_OP;
-		state<=`STATE_WRITE_MEM;
-		address<=location+1;
-		dataOut<=value[7:0];
-		writeEnable<=bWrite;
+		case (phase)
+			0: begin address<=operand[0]+operand[1]; writeEnable<=1; dataOut<=operand[2][7:0]; phase<=phase+1; end
+			1: begin address<=pc; writeEnable<=0; state<=`STATE_FETCH_OP; phase<=0; end
+		endcase
 	end
 endtask
 
-task DoMemOp8;
-	input [16:0] location;
-	input [7:0] value;
-	input bWrite;
+task StoreW;
 	begin
-		$display("MemopB%d: Value:%h Location:%h", bWrite, value, location);
-		memStack<=0;
-		lastState<=`STATE_FETCH_OP;
-		state<=`STATE_WRITE_MEM;
-		address<=location;
-		dataOut<=value[7:0];
-		writeEnable<=bWrite;
+		case (phase)
+			0: begin address<=operand[0]+operand[1]+0; writeEnable<=1; dataOut<=operand[2][15:8]; phase<=phase+1; end
+			1: begin address<=operand[0]+operand[1]+1; writeEnable<=1; dataOut<=operand[2][7:0]; phase<=phase+1; end
+			2: begin address<=pc; writeEnable<=0; state<=`STATE_FETCH_OP; phase<=0; end
+		endcase
 	end
 endtask
 
@@ -241,10 +218,6 @@ task DoBranch;
 	end
 endtask
 
-reg [16:0] temp;
-reg [15:0] temp2;
-reg [7:0] phase;
-
 task LoadAndStore;
 	input [16:0] loadAddress;
 	input [7:0]  storeLocation;
@@ -255,15 +228,14 @@ task LoadAndStore;
 			phase<=phase+1;
 		end else if (phase==1) begin
 			if (word) begin
-				temp[15:8]<=data;
-				temp[7:0]<=0;
+				temp[7:0]<=data;
 				address<=loadAddress+1;
 				phase<=phase+1;
 			end else begin
 				StoreResult(data);
 			end
 		end else begin
-			StoreResult(temp[15:0]|data);
+			StoreResult((temp[7:0]<<8)|data);
 		end
 	end
 endtask
@@ -337,7 +309,6 @@ task FindProp;
 				end else if (data[4:0]==operand[1]) begin // found property
 					temp<=temp+1;
 					address<=temp+1;
-					temp2<=0;
 					if (data[7:5]==0) // only 1 byte
 						phase<=6;
 					else
@@ -347,8 +318,8 @@ task FindProp;
 					address<=temp+data[7:5]+2;
 				end
 		   	end
-			5: begin temp2[15:8]=data; address<=temp+1; phase<=phase+1; end
-			6: begin StoreResult(temp2|data); end
+			5: begin temp[7:0]<=data; address<=temp+1; phase<=phase+1; end
+			6: begin StoreResult((temp[7:0]<<8)|data); end
 		endcase
 	end
 endtask
@@ -476,7 +447,7 @@ task DoOp;
 					`OP2_SUB: StoreResult($signed(operand[0])-$signed(operand[1]));
 					`OP2_MUL: StoreResult($signed(operand[0])*$signed(operand[1]));
 					`OP2_DIV: StoreResult($signed(operand[0])/$signed(operand[1]));
-					`OP2_MOD: StoreResult($signed(operand[0])%$signed(operand[1]));
+					//`OP2_MOD: StoreResult($signed(operand[0])%$signed(operand[1]));
 					default: begin
 						$display("Unknown op");
 						state<=`STATE_FETCH_OP;
@@ -488,8 +459,8 @@ task DoOp;
 					$display("Doing opvar:%d Operands:%h %h %h %h Store:%h Branch:%h/%d/%h", op, operand[0], operand[1], operand[2], operand[3], store, branch, negate, $signed(pc)+$signed(branch-2));
 				case (op)
 					`OPVAR_CALL: CallFunction();
-					`OPVAR_STOREW: DoMemOp16(operand[0]+2*operand[1],operand[2], 1);
-					`OPVAR_STOREB: DoMemOp8(operand[0]+operand[1],operand[2], 1);
+					`OPVAR_STOREW: StoreW();
+					`OPVAR_STOREB: StoreB();
 					`OPVAR_SREAD: begin $display("SREAD"); $finish; end
 					`OPVAR_PRINTCHAR: begin $display("PRINTCHAR:%d", $signed(operand[0])); state<=`STATE_FETCH_OP; end
 					`OPVAR_PRINTNUM: begin $display("PRINTNUM:%d", $signed(operand[0])); state<=`STATE_FETCH_OP; end
@@ -772,19 +743,6 @@ begin
 		`STATE_DO_OP: begin
 			DoOp(`STATE_FETCH_OP);
 		end
-		`STATE_WRITE_MEM: begin
-			memStackValue[memStack]<=data;
-			if (memStack>0) begin
-				address<=memStackAddress[0];
-				writeEnable<=memStackWrite[0];
-				dataOut<=memStackValue[0];
-				memStack<=0;
-			end else begin
-				writeEnable<=0;
-				state<=lastState;
-				address<=pc;
-			end
-		end
 		`STATE_STORE_REGISTER: begin
 			case (phase)
 				0: begin
@@ -841,7 +799,7 @@ begin
 	readData=$fread(mem, file);
 	$display("File read:%h %d", file, readData);
 	$fclose(file);
-	//$monitor("%h %h %h State:%d(%d) Op:%h Num:%h OperType:%h%h%h%h OperIdx:%d Operand:%h %h Store:%h Branch:%h memStack:%h %h %h", clk, data, address, b.state, b.phase, b.op, b.operNum, b.operTypes[0], b.operTypes[1], b.operTypes[2], b.operTypes[3], b.operandIdx, b.operand[0], b.operand[1], b.store, b.branch, b.memStack, b.memStackValue[0], b.memStackValue[1]);
+	//$monitor("%h %h %h State:%d(%d) Op:%h Num:%h OperType:%h%h%h%h OperIdx:%d Operand:%h %h Store:%h Branch:%h", clk, data, address, b.state, b.phase, b.op, b.operNum, b.operTypes[0], b.operTypes[1], b.operTypes[2], b.operTypes[3], b.operandIdx, b.operand[0], b.operand[1], b.store, b.branch);
 	for (i=0; i<64*1024; i=i+1)
 		dynamicMem[i]=mem[i];
 	b.pc='h5675;
