@@ -1,4 +1,4 @@
-module boss(clk, data, address, writeEnable, forceDynamicRead, dataOut);
+module boss(clk, data, address, writeEnable, forceDynamicRead, dataOut, printEnable);
 
 input clk;
 input [7:0] data;
@@ -7,11 +7,13 @@ output [16:0] address;
 output writeEnable;
 output forceDynamicRead;
 output [7:0] dataOut;
+output printEnable;
 
 reg [16:0] address;
 reg writeEnable;
 reg forceDynamicRead;
 reg [7:0] dataOut;
+reg printEnable;
 
 `define OPER_LARGE 2'b00
 `define OPER_SMALL 2'b01
@@ -28,6 +30,7 @@ reg [7:0] dataOut;
 `define STATE_CALL_FUNCTION	7
 `define STATE_RET_FUNCTION	8
 `define STATE_STORE_REGISTER 9
+`define STATE_PRINT 10
 
 `define OP_0	2'b00
 `define OP_1	2'b01
@@ -38,18 +41,32 @@ reg [7:0] dataOut;
 `define OP0_RFALSE	'h1
 `define OP0_PRINT	'h2
 `define OP0_PRINTRET 'h3
+`define OP0_NOP		'h4
+`define OP0_SAVE	'h5
+`define OP0_RESTORE	'h6
+`define OP0_RESTART	'h7
 `define OP0_RETPOP	'h8
+`define OP0_POP		'h9
+`define OP0_QUIT	'hA
 `define OP0_NEWLINE	'hB
+`define OP0_SHOWSTATUS	'hC
+`define OP0_VERIFY	'hD
 
 `define OP1_JZ		'h0
 `define OP1_GETSIBLING 'h1
 `define OP1_GETCHILD 'h2
 `define OP1_GETPARENT 'h3
+`define OP1_GETPROPLEN 'h4
 `define OP1_INC		'h5
 `define OP1_DEC		'h6
+`define OP1_PRINTADDR 'h7
+`define OP1_REMOVEOBJ 'h9
 `define OP1_PRINTOBJ 'hA
 `define OP1_RET		'hB
 `define OP1_JUMP	'hC
+`define OP1_PRINTPADDR 'hD
+`define OP1_LOAD 'hE
+`define OP1_NOT 'hF
 
 `define OP2_JE		'h1
 `define OP2_JL		'h2
@@ -57,14 +74,19 @@ reg [7:0] dataOut;
 `define OP2_DEC_CHK	'h4
 `define OP2_INC_CHK	'h5
 `define OP2_JIN		'h6
+`define OP2_TEST	'h7
 `define OP2_OR		'h8
 `define OP2_AND		'h9
 `define OP2_TESTATTR 'hA
 `define OP2_SETATTR 'hB
+`define OP2_CLEARATTR 'hC
 `define OP2_STORE	'hD
+`define OP2_INSERTOBJ 'hE
 `define OP2_LOADW	'hF
 `define OP2_LOADB	'h10
 `define OP2_GETPROP	'h11
+`define OP2_GETPROPADDR	'h12
+`define OP2_GETNEXTPROP	'h13
 `define OP2_ADD		'h14
 `define OP2_SUB		'h15
 `define OP2_MUL		'h16
@@ -74,12 +96,17 @@ reg [7:0] dataOut;
 `define OPVAR_CALL   'h0
 `define OPVAR_STOREW 'h1
 `define OPVAR_STOREB 'h2
+`define OPVAR_PUTPROP 'h3
 `define OPVAR_SREAD  'h4
 `define OPVAR_PRINTCHAR 'h5
 `define OPVAR_PRINTNUM 'h6
 `define OPVAR_RANDOM 'h7
 `define OPVAR_PUSH 'h8
 `define OPVAR_PULL 'h9
+
+`define PRINTEFFECT_FETCH		0
+`define PRINTEFFECT_FETCHAFTER	1
+`define PRINTEFFECT_RET1		2
 
 reg [3:0] state;
 
@@ -129,6 +156,7 @@ begin
 	csStack=65*1024;
 	forceDynamicRead=0;
 	writeEnable=0;
+	printEnable<=0;
 end
 
 task StoreB;
@@ -266,6 +294,16 @@ task SetAttr;
 	end
 endtask
 
+task ClearAttr;
+	begin
+		case (phase)
+			0: begin address<=GetObjectAddr(operand[0])+(operand[1]/8); phase<=phase+1; end
+			1: begin dataOut<=data&(~(1<<(operand[1]&7))); writeEnable<=1; phase<=phase+1; end
+			2: begin writeEnable<=0; address<=pc; state=`STATE_FETCH_OP; end
+		endcase
+	end
+endtask
+
 task JumpIfParent;
 	begin
 		case (phase)
@@ -296,7 +334,7 @@ endtask
 
 task FindProp;
 	begin
-		case (phase)
+		case (phase[2:0])
 			0: begin address<=GetObjectAddr(operand[0])+7; phase<=phase+1; end
 			1: begin temp[16]<=0; temp[15:8]<=data; temp[7:0]<=0; address<=GetObjectAddr(operand[0])+8; phase<=phase+1; end
 			2: begin temp[7:0]<=data; address<=temp|data; phase<=phase+1; end
@@ -320,6 +358,83 @@ task FindProp;
 		   	end
 			5: begin temp[7:0]<=data; address<=temp+1; phase<=phase+1; end
 			6: begin StoreResult((temp[7:0]<<8)|data); end
+		endcase
+	end
+endtask
+
+task SetProp;
+	begin
+		case (phase[2:0])
+			0: begin address<=GetObjectAddr(operand[0])+7; phase<=phase+1; end
+			1: begin temp[16]<=0; temp[15:8]<=data; temp[7:0]<=0; address<=GetObjectAddr(operand[0])+8; phase<=phase+1; end
+			2: begin temp[7:0]<=data; address<=temp|data; phase<=phase+1; end
+			3: begin temp<=temp+2*data+1; address<=temp+2*data+1; phase<=phase+1; end
+			4: begin
+				if (data==0) begin // end of search
+					$finish;
+				end else if (data[4:0]==operand[1]) begin // found property
+					temp<=temp+1;
+					if (data[7:5]==0) begin // only 1 byte
+						dataOut<=operand[2][7:0];
+						phase<=6;
+						address<=temp+1;
+						writeEnable<=1;
+					end else begin
+						dataOut<=operand[2][15:8];
+						phase<=5;
+						address<=temp+1;
+						writeEnable<=1;
+					end
+				end else begin // skip over data
+					temp<=temp+data[7:5]+2;
+					address<=temp+data[7:5]+2;
+				end
+			end
+			5: begin dataOut<=operand[1][7:0]; writeEnable<=1; address<=temp+1; phase<=phase+1; end
+			6: begin state<=`STATE_FETCH_OP; address<=pc; writeEnable<=0; end
+		endcase
+	end
+endtask
+
+task FindPropAddrLen;
+	input findAddress;
+	begin
+		case (phase[2:0])
+			0: begin address<=GetObjectAddr(operand[0])+7; phase<=phase+1; end
+			1: begin temp[16]<=0; temp[15:8]<=data; temp[7:0]<=0; address<=GetObjectAddr(operand[0])+8; phase<=phase+1; end
+			2: begin temp[7:0]<=data; address<=temp|data; phase<=phase+1; end
+			3: begin temp<=temp+2*data+1; address<=temp+2*data+1; phase<=phase+1; end
+			4: begin
+				if (data==0) begin	// end of search
+					StoreResult(0);
+				end else if (data[4:0]==operand[1]) begin // found property
+					StoreResult(findAddress?(temp+1):(data[7:5]+1));
+				end else begin // skip over data
+					temp<=temp+data[7:5]+2;
+					address<=temp+data[7:5]+2;
+				end
+		   	end
+		endcase
+	end
+endtask
+
+task FindNextProp;
+	begin
+		case (phase[2:0])
+			0: begin address<=GetObjectAddr(operand[0])+7; phase<=phase+1; end
+			1: begin temp[16]<=0; temp[15:8]<=data; temp[7:0]<=0; address<=GetObjectAddr(operand[0])+8; phase<=phase+1; end
+			2: begin temp[7:0]<=data; address<=temp|data; phase<=phase+1; end
+			3: begin temp<=temp+2*data+1; address<=temp+2*data+1; phase<=phase+1; end
+			4: begin
+				if (operand[1]==0 || data[4:0]==operand[1])
+					StoreResult(data[4:0]);
+				else if (data==0) begin	// end of search
+					$finish;
+				end else begin // skip over data
+					temp<=temp+data[7:5]+2;
+					address<=temp+data[7:5]+2;
+				end
+		   	end
 		endcase
 	end
 endtask
@@ -373,6 +488,60 @@ task RetPop;
 	end
 endtask
 
+task Print;
+	input [16:0] addr;
+	input [7:0] effect;
+	begin
+		temp<=addr;
+		state<=`STATE_PRINT;
+		printEnable<=1;
+		returnValue<=effect;
+		phase<=0;
+	end
+endtask
+
+task PrintObj;
+	begin
+		case (phase[1:0])
+			0: begin address<=GetObjectAddr(operand[0])+7; phase<=phase+1; end
+			1: begin returnValue[7:0]<=data; address<=GetObjectAddr(operand[0])+8; phase<=phase+1; end
+			default: Print((returnValue<<8)+data+1, `PRINTEFFECT_FETCH);
+		endcase
+	end
+endtask
+
+task Load;
+	begin
+		case (phase)
+			0: begin
+				if (operand[0]>=16) begin
+					temp<=globalsAddress+2*(operand[0]-16);
+					address<=globalsAddress+2*(operand[0]-16);
+				end else if (operand[0]==0) begin
+					temp<=stackAddress-2;
+					address<=stackAddress-2;
+					stackAddress<=stackAddress-2;
+					forceDynamicRead<=1;
+				end else begin
+					temp<=csStack+7+2*(operand[0]-1);
+					address<=csStack+7+2*(operand[0]-1);
+					forceDynamicRead<=1;
+				end
+				phase<=phase+1;
+			end
+			1: begin
+				operand[1][7:0]<=data;
+				address<=temp+1;
+				phase<=phase+1;
+			end
+			2: begin
+				forceDynamicRead<=0;
+				StoreResult((operand[1][7:0]<<8)|data);
+			end
+		endcase
+	end
+endtask
+
 task DoOp;
 	input nextState;
 	begin
@@ -383,23 +552,17 @@ task DoOp;
 				case (op)
 					`OP0_RTRUE: ReturnFunction(1);
 					`OP0_RFALSE: ReturnFunction(0);
-					`OP0_PRINT: begin
-						phase<=1;
-						if (pc[0]==curPC[0] || !(data&'h80)) begin
-							pc<=pc+1;
-							address<=pc+1;
-						end else begin
-							state<=`STATE_FETCH_OP;
-							pc<=pc+2;
-							address<=pc+2;
-						end
-					end
-					`OP0_PRINTRET: begin
-						// FIXME: Print first
-						ReturnFunction(1);
-					end
+					`OP0_PRINT: Print(pc, `PRINTEFFECT_FETCHAFTER);
+					`OP0_PRINTRET: Print(pc, `PRINTEFFECT_RET1);
+					`OP0_NOP: state<=`STATE_FETCH_OP;
+					`OP0_SAVE,`OP0_RESTORE: DoBranch(0);
+					`OP0_RESTART: $finish;
 					`OP0_RETPOP: RetPop();
+					`OP0_POP: begin stackAddress<=stackAddress-2; state<=`STATE_FETCH_OP; end
+					`OP0_QUIT: $finish;
 					`OP0_NEWLINE: begin $display("NEWLINE"); state<=`STATE_FETCH_OP; end
+					`OP0_SHOWSTATUS: state<=`STATE_FETCH_OP;
+					`OP0_VERIFY: DoBranch(1);
 					default: begin
 						$display("Unknown op");
 						state<=`STATE_FETCH_OP;
@@ -414,11 +577,17 @@ task DoOp;
 					`OP1_GETSIBLING: GetRelative(1);
 					`OP1_GETCHILD: GetRelative(2);
 					`OP1_GETPARENT: GetParent();
+					`OP1_GETPROPLEN: FindPropAddrLen(0);
 					`OP1_INC: StoreResult(operand[0]+1);
 					`OP1_DEC: StoreResult(operand[0]-1);
-					`OP1_PRINTOBJ: begin $display("Print obj %d", operand[0]); state<=`STATE_FETCH_OP; end
+					`OP1_PRINTADDR: Print(operand[0], `PRINTEFFECT_FETCH); 
+					`OP1_REMOVEOBJ: begin /*TODO*/ end
+					`OP1_PRINTOBJ: PrintObj();
 					`OP1_RET: ReturnFunction(operand[0]);
 					`OP1_JUMP: begin pc<=$signed(pc)+$signed(operand[0])-2; address<=$signed(pc)+$signed(operand[0])-2; state<=`STATE_FETCH_OP; end
+					`OP1_PRINTPADDR: Print(2*operand[0], `PRINTEFFECT_FETCH); 
+					`OP1_LOAD: Load();
+					`OP1_NOT: StoreResult(~operand[0]);
 					default: begin
 						$display("Unknown op");
 						state<=`STATE_FETCH_OP;
@@ -435,14 +604,19 @@ task DoOp;
 					`OP2_INC_CHK: StoreResultAndBranch(operand[0]+1, operand[0]+1==operand[1]);
 					`OP2_DEC_CHK: StoreResultAndBranch(operand[0]-1, operand[0]-1==operand[1]);
 					`OP2_JIN: JumpIfParent();
+					`OP2_TEST: DoBranch((operand[0]&operand[1])==operand[1]);
 					`OP2_OR: StoreResult(operand[0]|operand[1]);
 					`OP2_AND: StoreResult(operand[0]&operand[1]);
 					`OP2_TESTATTR: TestAttr();
 					`OP2_SETATTR: SetAttr();
+					`OP2_CLEARATTR: ClearAttr();
 					`OP2_STORE: StoreRegisterAndBranch(operand[0], operand[1], negate);
+					`OP2_INSERTOBJ: begin /*TODO*/ end
 					`OP2_LOADW: LoadAndStore(operand[0]+2*operand[1], store, 1);
 					`OP2_LOADB: LoadAndStore(operand[0]+operand[1], store, 0);
 					`OP2_GETPROP: FindProp();
+					`OP2_GETPROPADDR: FindPropAddrLen(1);
+					`OP2_GETNEXTPROP: FindNextProp();
 					`OP2_ADD: StoreResult($signed(operand[0])+$signed(operand[1]));
 					`OP2_SUB: StoreResult($signed(operand[0])-$signed(operand[1]));
 					`OP2_MUL: StoreResult($signed(operand[0])*$signed(operand[1]));
@@ -461,6 +635,7 @@ task DoOp;
 					`OPVAR_CALL: CallFunction();
 					`OPVAR_STOREW: StoreW();
 					`OPVAR_STOREB: StoreB();
+					`OPVAR_PUTPROP: SetProp();
 					`OPVAR_SREAD: begin $display("SREAD"); $finish; end
 					`OPVAR_PRINTCHAR: begin $display("PRINTCHAR:%d", $signed(operand[0])); state<=`STATE_FETCH_OP; end
 					`OPVAR_PRINTNUM: begin $display("PRINTNUM:%d", $signed(operand[0])); state<=`STATE_FETCH_OP; end
@@ -774,6 +949,40 @@ begin
 				end
 			endcase
 		end
+		`STATE_PRINT: begin
+			case (phase[0])
+				0: begin
+					delayedBranch<=data[7];
+					address<=temp+1;
+					temp<=temp+1;
+					phase[0]<=1;
+				end
+				1: begin 
+					if (delayedBranch) begin
+						case (returnValue[1:0])
+							`PRINTEFFECT_FETCH: begin
+								address<=pc;
+								state<=`STATE_FETCH_OP;
+							end
+							`PRINTEFFECT_FETCHAFTER: begin
+								pc<=temp+1;
+								address<=temp+1;
+								state<=`STATE_FETCH_OP;
+							end
+							`PRINTEFFECT_RET1: begin
+								ReturnFunction(1);
+							end
+						endcase
+						phase<=0;
+						printEnable<=0;
+					end else begin
+						address<=temp+1;
+						temp<=temp+1;
+						phase[0]<=0;
+					end
+				end
+			endcase
+		end
 	endcase
 end
 
@@ -787,10 +996,63 @@ wire [16:0] address;
 wire writeEnable;
 wire forceDynamicRead;
 wire [7:0] dataOut;
+wire printEnable;
 
 integer file,readData,i;
 reg [7:0] mem [128*1024:0];
 reg [7:0] dynamicMem [128*1024:0];
+
+reg printPhase;
+reg [4:0] char [2:0];
+reg [1:0] alphabet;
+reg abbrevNext;
+
+task PrintChar;
+	input [4:0] c;
+	begin
+		if (!abbrevNext) begin
+			if (c==0)
+				$display("PRINT:  ");
+			else if (c==4)
+				alphabet=1;
+			else if (c==5)
+				alphabet=2;
+			else if (c>=6) begin
+				case (alphabet)
+					0: $display("PRINT: %c", c-6+97);
+					1: $display("PRINT: %c", c-6+65);
+					2: begin
+						case (c)
+							6: $display("PRINT: TODO PrintLong");
+							7: $display("PRINT: \n");
+							8,9,10,11,12,13,14,15,16,17: $display("PRINT: %c", c-8+48);
+							18: $display("PRINT: .");
+							19: $display("PRINT: ,");
+							20: $display("PRINT: !");
+							21: $display("PRINT: ?");
+							22: $display("PRINT: _");
+							23: $display("PRINT: #");
+							24: $display("PRINT: '");
+							25: $display("PRINT: \"");
+							26: $display("PRINT: /");
+							27: $display("PRINT: /"); // Wrong
+							28: $display("PRINT: -");
+							29: $display("PRINT: :");
+							30: $display("PRINT: (");
+							31: $display("PRINT: )");
+						endcase
+					end
+				endcase
+				alphabet=0;
+			end else begin
+				$display("PRINT: Abbrev %h", c);
+				abbrevNext=1;
+			end
+		end else begin
+			abbrevNext=0;
+		end
+	end
+endtask
 
 initial
 begin
@@ -806,6 +1068,8 @@ begin
 	b.globalsAddress='h275c;
 	b.objectTable='h2c8;
 	data=mem[b.pc];
+	printPhase=0;
+	abbrevNext=0;
 	for (i=0; i</*505*/10000; i=i+1) begin
 		clk=1;
 		#5 clk=0;
@@ -816,12 +1080,29 @@ begin
 		end else begin
 			data=mem[address];
 		end
-		$display("Mem req: %h WE:%d FD:%d D:%h DO:%h", address, writeEnable, forceDynamicRead, data, dataOut);
+		if (printEnable) begin
+			if (!printPhase) begin
+				char[0]=data[6:2];
+				char[1]=data[1:0]<<3;
+			end else begin
+				char[1]=char[1]|data[7:5];
+				char[2]=data[4:0];
+				PrintChar(char[0]);
+				PrintChar(char[1]);
+				PrintChar(char[2]);
+			end
+			printPhase<=~printPhase;
+		end else begin
+			if (printPhase)
+				$display("TRUNCATED PRINT");
+			alphabet<=0;
+		end
+		//$display("Mem req: %h WE:%d FD:%d D:%h DO:%h", address, writeEnable, forceDynamicRead, data, dataOut);
 	end
 	$finish;
 end
 
-boss b(clk, data, address, writeEnable, forceDynamicRead, dataOut);
+boss b(clk, data, address, writeEnable, forceDynamicRead, dataOut, printEnable);
 
 endmodule
 
