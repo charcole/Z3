@@ -33,6 +33,7 @@
 3202 (69%)		- Remove temp2
 
 4034 (88%)		- Printing system + All ops but (MOD/remove_obj/insert_obj)
+4503 (98%)		- All ops except MOD
 
 Moya
 Ellie/Ally

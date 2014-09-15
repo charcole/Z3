@@ -542,6 +542,48 @@ task Load;
 	end
 endtask
 
+task RemoveObject;
+	input andInsert;
+	begin
+		case (phase[3:0])
+			0: begin address<=GetObjectAddr(operand[0])+4; /*obj.parent*/ phase<=phase+1; end
+			1: begin
+				if (data==0) begin
+					state<=`STATE_FETCH_OP;
+					address<=pc;
+				end else begin
+					temp[15:8]<=data;
+					writeEnable<=1;
+					dataOut<=0;
+					phase<=phase+1;
+				end
+			end
+			2: begin writeEnable<=0; address<=GetObjectAddr(operand[0])+5; /*obj.sibling*/ phase<=phase+1; end
+			3: begin temp[7:0]<=data; writeEnable<=1; dataOut<=0; phase<=phase+1; end
+			4: begin writeEnable<=0; address<=GetObjectAddr(temp[15:8])+6; /*parent.child*/ phase<=phase+1; end
+			5: begin
+				if (data==operand[0]) begin // found object
+					dataOut<=temp[7:0];
+					writeEnable<=1;
+					phase<=andInsert?phase+1:10;
+				end else begin
+					address<=GetObjectAddr(data)+5; /*follow sibling*/
+				end
+			end
+
+			6: begin address<=GetObjectAddr(operand[1])+6; phase<=phase+1; end
+			7: begin temp[7:0]<=data; writeEnable<=1; dataOut<=operand[0]; phase<=phase+1; end
+			8: begin address<=GetObjectAddr(operand[0])+4; writeEnable<=1; dataOut<=operand[1][7:0]; phase<=phase+1; end
+			9: begin address<=GetObjectAddr(operand[0])+5; writeEnable<=1; dataOut<=temp[7:0]; phase<=phase+1; end
+			10: begin
+				writeEnable<=0;
+				state<=`STATE_FETCH_OP;
+				address<=pc;
+			end
+		endcase
+	end
+endtask
+
 task DoOp;
 	input nextState;
 	begin
@@ -581,7 +623,7 @@ task DoOp;
 					`OP1_INC: StoreResult(operand[0]+1);
 					`OP1_DEC: StoreResult(operand[0]-1);
 					`OP1_PRINTADDR: Print(operand[0], `PRINTEFFECT_FETCH); 
-					`OP1_REMOVEOBJ: begin /*TODO*/ end
+					`OP1_REMOVEOBJ: RemoveObject(0);
 					`OP1_PRINTOBJ: PrintObj();
 					`OP1_RET: ReturnFunction(operand[0]);
 					`OP1_JUMP: begin pc<=$signed(pc)+$signed(operand[0])-2; address<=$signed(pc)+$signed(operand[0])-2; state<=`STATE_FETCH_OP; end
@@ -611,7 +653,7 @@ task DoOp;
 					`OP2_SETATTR: SetAttr();
 					`OP2_CLEARATTR: ClearAttr();
 					`OP2_STORE: StoreRegisterAndBranch(operand[0], operand[1], negate);
-					`OP2_INSERTOBJ: begin /*TODO*/ end
+					`OP2_INSERTOBJ: RemoveObject(1);
 					`OP2_LOADW: LoadAndStore(operand[0]+2*operand[1], store, 1);
 					`OP2_LOADB: LoadAndStore(operand[0]+operand[1], store, 0);
 					`OP2_GETPROP: FindProp();
@@ -639,7 +681,7 @@ task DoOp;
 					`OPVAR_SREAD: begin $display("SREAD"); $finish; end
 					`OPVAR_PRINTCHAR: begin $display("PRINTCHAR:%d", $signed(operand[0])); state<=`STATE_FETCH_OP; end
 					`OPVAR_PRINTNUM: begin $display("PRINTNUM:%d", $signed(operand[0])); state<=`STATE_FETCH_OP; end
-					`OPVAR_RANDOM: StoreResult(0); // FIXME
+					`OPVAR_RANDOM: StoreResult(0); // FIXME: Need to implement properly 
 					`OPVAR_PUSH: StoreRegisterAndBranch(0, operand[0], negate);
 					`OPVAR_PULL: Pull();
 					default: begin
