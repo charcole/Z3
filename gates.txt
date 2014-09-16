@@ -35,6 +35,15 @@
 4034 (88%)		- Printing system + All ops but (MOD/remove_obj/insert_obj)
 4503 (98%)		- All ops except MOD
 
+5373 (117%)		- Reset + full printing system (except print_num)
+5125 (111%)		- Print state collapse
+5053 (110%)		- Removed some duplicate driving
+
+Todo:
+	Reset logic				(Fairly simple)
+	Improve print system	(Problem: Abbreviations + print char/num/newline)
+	Lexical analysis		(Problem: Dictionary)
+
 Moya
 Ellie/Ally
 Laura
