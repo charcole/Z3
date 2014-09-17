@@ -38,11 +38,45 @@
 5373 (117%)		- Reset + full printing system (except print_num)
 5125 (111%)		- Print state collapse
 5053 (110%)		- Removed some duplicate driving
+4906 (106%)		- Multicycle divide (and implements MOD)
+4910 (107%)		- + Working random
+5081 (110%)		- + Implemented print_num
+4538 (98%)		- Without print/sread
+
+5012 (109%)		- Full (with tweak)
+1022 (22%)		-  - All ops
+1711 (37%)		-  + 0Ops (~700)
+2945 (64%)		-  + 1Ops (~1200)
+4048 (88%)		-  + VarOps (~1100)
+5012 (109%)		-  + 2Ops (~1000)
+4651 (101%)		- Full - 0Ops (~400)
+4202 (91%)		- Full - 1Ops (~800)
+4048 (88%)		- Full - 2Ops (~1000)
+4177 (91%)		- Full - VarOps (~800)
+
+4741 (103%)		- Full - Call (~250)
+4867 (106%)		-  Full - Call - AvoidReadFunction
+4974 (108%)		- Full - StoreW/StoreB (~40)
+4931 (107%)		- Full - PutProp (~80)
+4831 (105%)		- Full - printchar/num (~180)
+4853 (105%)		- Full - printnum (~140)
+4938 (107%)		- Full - Random (~75)
+4937 (107%)		- Full - Push/Pull (~75)
+
+4755 (103%)		- Full (Modified call/read function states. Very suspicious!)
+4591 (100%)		- Full - Load (~160)
+4569 (99%)		- Full - RemoveObj (~190)
+4648 (101%)		- Full (RemoveObj calls insert obj)
+4586 (100%)		- Full (fussed Pull) <- Yay!
 
 Todo:
-	Reset logic				(Fairly simple)
 	Improve print system	(Problem: Abbreviations + print char/num/newline)
 	Lexical analysis		(Problem: Dictionary)
+
+	Possible improvement: Print system->Print 5-bit ZSCII encoded. Removes
+						   ZSCII->ASCII conversion. Maybe harder due to reset
+						   problems (top bits?)
+						  BIOS (for print/sread) <- Slippery slope
 
 Moya
 Ellie/Ally

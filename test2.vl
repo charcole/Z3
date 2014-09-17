@@ -36,6 +36,7 @@ reg printEnable;
 `define STATE_RESET 		11
 `define STATE_HALT			12
 `define STATE_PRINT_CHAR	13
+`define STATE_DIVIDE		14
 
 `define OP_0	2'b00
 `define OP_1	2'b01
@@ -145,6 +146,7 @@ reg [17:0] stackAddress;
 
 reg [16:0] temp;
 reg [3:0] phase;
+reg [15:0] random;
 
 initial
 begin
@@ -161,6 +163,7 @@ begin
 	forceDynamicRead=0;
 	writeEnable=0;
 	printEnable<=0;
+	random<=1;
 	phase<=0;
 end
 
@@ -449,24 +452,22 @@ task Pull;
 	begin
 		case (phase)
 			0: begin
+				stackAddress<=stackAddress-2;
 				address<=stackAddress-2;
 				forceDynamicRead<=1;
 				phase<=phase+1;
 			end
 			1: begin
-				stackAddress<=stackAddress-2;
-				temp[15:8]<=data;
-				temp[7:0]<=0;
-				address<=stackAddress-1;
-				forceDynamicRead<=1;
+				temp[7:0]<=data;
+				address<=address+1;
 				phase<=phase+1;
 			end
 			2: begin
 				forceDynamicRead<=0;
 				if (return)
-					ReturnFunction(temp[15:0]|data);
+					ReturnFunction((temp[7:0]<<8)|data);
 				else
-					StoreRegisterAndBranch(operand[0], temp[15:0]|data, negate);
+					StoreRegisterAndBranch(operand[0], (temp[7:0]<<8)|data, negate);
 			end
 		endcase
 
@@ -500,15 +501,12 @@ task Load;
 		case (phase)
 			0: begin
 				if (operand[0]>=16) begin
-					temp<=globalsAddress+2*(operand[0]-16);
 					address<=globalsAddress+2*(operand[0]-16);
 				end else if (operand[0]==0) begin
-					temp<=stackAddress-2;
 					address<=stackAddress-2;
 					stackAddress<=stackAddress-2;
 					forceDynamicRead<=1;
 				end else begin
-					temp<=csStack+7+2*(operand[0]-1);
 					address<=csStack+7+2*(operand[0]-1);
 					forceDynamicRead<=1;
 				end
@@ -516,7 +514,7 @@ task Load;
 			end
 			1: begin
 				operand[1][7:0]<=data;
-				address<=temp+1;
+				address<=address+1;
 				phase<=phase+1;
 			end
 			2: begin
@@ -528,7 +526,6 @@ task Load;
 endtask
 
 task RemoveObject;
-	input andInsert;
 	begin
 		case (phase[3:0])
 			0: begin address<=GetObjectAddr(operand[0])+4; /*obj.parent*/ phase<=phase+1; end
@@ -550,7 +547,7 @@ task RemoveObject;
 				if (data==operand[0]) begin // found object
 					dataOut<=temp[7:0];
 					writeEnable<=1;
-					phase<=andInsert?phase+1:10;
+					phase<=(operand[1]!=0)?phase+1:10;
 				end else begin
 					address<=GetObjectAddr(data)+5; /*follow sibling*/
 				end
@@ -565,6 +562,42 @@ task RemoveObject;
 				state<=`STATE_FETCH_OP;
 				address<=pc;
 			end
+		endcase
+	end
+endtask
+
+task Random;
+	begin
+		case (phase)
+			0: begin random<=random^(random<<13); phase<=phase+1; end
+			1: begin random<=random^(random>>9); phase<=phase+1; end
+			2: begin random<=random^(random<<7); phase<=phase+1; end
+			3: begin state<=`STATE_DIVIDE; delayedBranch<=1; operand[1]<=operand[0]+1; operand[0]<=random; phase<=0; end
+		endcase
+	end
+endtask
+
+task PrintNum;
+	begin
+		case (phase)
+			0: begin negate<=0; operand[1]<=1; operand[2][2:0]<=2; operand[3][3:0]<=0; phase<=phase+1; end
+			1,2,3,4: begin operand[1]<=(operand[1]<<3)+(operand[1]<<1); printEnable<=0; phase<=phase+1; end
+			5: begin
+				if (operand[0]>=operand[1]) begin
+					operand[0]<=operand[0]-operand[1];
+					operand[3][3:0]<=operand[3][3:0]+1;
+					negate<=1;
+					printEnable<=0;
+				end else begin
+					printEnable<=negate;
+					dataOut<=operand[3][3:0]+48;
+					operand[3][3:0]<=0;
+					operand[1]<=1;
+					operand[2][2:0]<=operand[2][2:0]+1;
+					phase<=operand[2][2:0];
+				end
+			end
+			6: begin printEnable<=0; state<=`STATE_FETCH_OP; end
 		endcase
 	end
 endtask
@@ -605,7 +638,7 @@ task DoOp;
 					`OP1_INC: StoreResult(operand[0]+1);
 					`OP1_DEC: StoreResult(operand[0]-1);
 					`OP1_PRINTADDR: Print(operand[0], `PRINTEFFECT_FETCH); 
-					`OP1_REMOVEOBJ: RemoveObject(0);
+					`OP1_REMOVEOBJ: begin operNum<=`OP_2; op<=`OP2_INSERTOBJ; operand[1]<=0; end
 					`OP1_PRINTOBJ: PrintObj();
 					`OP1_RET: ReturnFunction(operand[0]);
 					`OP1_JUMP: begin pc<=$signed(pc)+$signed(operand[0])-2; address<=$signed(pc)+$signed(operand[0])-2; state<=`STATE_FETCH_OP; end
@@ -632,7 +665,7 @@ task DoOp;
 					`OP2_SETATTR: SetAttr();
 					`OP2_CLEARATTR: ClearAttr();
 					`OP2_STORE: StoreRegisterAndBranch(operand[0], operand[1], negate);
-					`OP2_INSERTOBJ: RemoveObject(1);
+					`OP2_INSERTOBJ: RemoveObject();
 					`OP2_LOADW: LoadAndStore(operand[0]+2*operand[1], store, 1);
 					`OP2_LOADB: LoadAndStore(operand[0]+operand[1], store, 0);
 					`OP2_GETPROP: FindProp();
@@ -641,8 +674,8 @@ task DoOp;
 					`OP2_ADD: StoreResult($signed(operand[0])+$signed(operand[1]));
 					`OP2_SUB: StoreResult($signed(operand[0])-$signed(operand[1]));
 					`OP2_MUL: StoreResult($signed(operand[0])*$signed(operand[1]));
-					`OP2_DIV: StoreResult($signed(operand[0])/$signed(operand[1]));
-					//`OP2_MOD: StoreResult($signed(operand[0])%$signed(operand[1]));
+					`OP2_DIV: begin state=`STATE_DIVIDE; delayedBranch<=0; end
+					`OP2_MOD: begin state=`STATE_DIVIDE; delayedBranch<=1; end
 					default: state<=`STATE_HALT;
 				endcase
 			end
@@ -656,8 +689,8 @@ task DoOp;
 					`OPVAR_PUTPROP: SetProp();
 					`OPVAR_SREAD: begin $display("SREAD"); state<=`STATE_HALT; end
 					`OPVAR_PRINTCHAR: begin printEnable<=1; dataOut<=operand[0]; state<=`STATE_PRINT_CHAR; end
-					`OPVAR_PRINTNUM: begin $display("PRINTNUM:%d", $signed(operand[0])); state<=`STATE_FETCH_OP; end
-					`OPVAR_RANDOM: StoreResult(0); // FIXME: Need to implement properly 
+					`OPVAR_PRINTNUM: PrintNum();
+					`OPVAR_RANDOM: Random();
 					`OPVAR_PUSH: StoreRegisterAndBranch(0, operand[0], negate);
 					`OPVAR_PULL: Pull(0);
 					default: state<=`STATE_HALT;
@@ -738,8 +771,8 @@ begin
 				2: begin address<='hA; phase<=phase+1; pc[7:0]<=data; end
 				3: begin address<='hB; phase<=phase+1; objectTable[15:8]<=data; objectTable[16]<=0; end
 				4: begin address<='hC; phase<=phase+1; objectTable[7:0]<=data; end
-				5: begin address<='hD; phase<=phase+1; globalsAddress[15:8]<=data; globalsAddress[16]<=0; end
-				6: begin temp<=0; address<=0; phase<=phase+1; globalsAddress[7:0]<=data; end
+				5: begin address<='hD; phase<=phase+1; globalsAddress[16:8]<=data; globalsAddress[16]<=0; end
+				6: begin address<=0; phase<=phase+1; globalsAddress[7:0]<=data; end
 				7: begin dataOut<=data; writeEnable<=1; phase<=8; end
 				8: begin writeEnable<=0; address<=address+1; if (address[15:0]=='hffff) phase<=9; else phase<=7; end
 				9: begin
@@ -752,12 +785,12 @@ begin
 		`STATE_CALL_FUNCTION: begin
 			case (phase)
 				0: begin address<=csStack+phase; writeEnable<=1; dataOut<=pc[16]; phase<=phase+1; end
-				1: begin address<=csStack+phase; dataOut<=pc[15:8]; phase<=phase+1; end
-				2: begin address<=csStack+phase; dataOut<=pc[7:0]; phase<=phase+1; end
-				3: begin address<=csStack+phase; dataOut<=stackAddress[16]; phase<=phase+1; end
-				4: begin address<=csStack+phase; dataOut<=stackAddress[15:8]; phase<=phase+1; end
-				5: begin address<=csStack+phase; dataOut<=stackAddress[7:0]; phase<=phase+1; end
-				6: begin address<=csStack+phase; dataOut<=store; phase<=phase+1; end
+				1: begin address<=address+1; dataOut<=pc[15:8]; phase<=phase+1; end
+				2: begin address<=address+1; dataOut<=pc[7:0]; phase<=phase+1; end
+				3: begin address<=address+1; dataOut<=stackAddress[16]; phase<=phase+1; end
+				4: begin address<=address+1; dataOut<=stackAddress[15:8]; phase<=phase+1; end
+				5: begin address<=address+1; dataOut<=stackAddress[7:0]; phase<=phase+1; end
+				6: begin address<=address+1; dataOut<=store; phase<=phase+1; end
 				7: begin
 					csStack<=csStack+37;
 					pc<=2*operand[0];
@@ -770,13 +803,13 @@ begin
 		end
 		`STATE_RET_FUNCTION: begin
 			case (phase)
-				0: begin csStack<=csStack-37; address<=csStack-37+phase; forceDynamicRead<=1; phase<=phase+1; end
-				1: begin pc[16]=data[0]; address<=csStack+phase; phase<=phase+1; end
-				2: begin pc[15:8]=data; address<=csStack+phase; phase<=phase+1; end
-				3: begin pc[7:0]=data; address<=csStack+phase; phase<=phase+1; end
-				4: begin stackAddress[16]=data[0]; address<=csStack+phase; phase<=phase+1; end
-				5: begin stackAddress[15:8]=data; address<=csStack+phase; phase<=phase+1; end
-				6: begin stackAddress[7:0]=data; address<=csStack+phase; phase<=phase+1; end
+				0: begin csStack<=csStack-37; address<=csStack-37; forceDynamicRead<=1; phase<=phase+1; end
+				1: begin pc[16]=data[0]; address<=address+1; phase<=phase+1; end
+				2: begin pc[15:8]=data; address<=address+1; phase<=phase+1; end
+				3: begin pc[7:0]=data; address<=address+1; phase<=phase+1; end
+				4: begin stackAddress[16]=data[0]; address<=address+1; phase<=phase+1; end
+				5: begin stackAddress[15:8]=data; address<=address+1; phase<=phase+1; end
+				6: begin stackAddress[7:0]=data; address<=address+1; phase<=phase+1; end
 				7: begin
 					forceDynamicRead<=0;
 					StoreRegisterAndBranch(data, returnValue, negate);
@@ -1041,6 +1074,51 @@ begin
 					writeEnable<=0;
 					phase<=0;
 				end
+			endcase
+		end
+		`STATE_DIVIDE: begin
+			case (phase)
+				0: begin
+					negate<=operand[0][15];
+					if (operand[0]<0)
+						operand[0]<=-operand[0];
+					if (operand[1]==0)
+						state=`STATE_HALT;
+					else if (operand[1]<0)
+						operand[1]<=-operand[1];
+					operand[2]<=1;
+					operand[3]<=0;
+					phase<=phase+1;
+				end
+				1: begin
+					if (!operand[1][15]) begin
+						operand[1]<=operand[1]<<1;
+						operand[2]<=operand[2]<<1;
+					end else begin
+						phase<=phase+1;
+					end
+				end
+				2: begin
+					if (operand[1]>operand[2]) begin
+						if (operand[2]==1) begin
+							if (negate) begin
+								operand[0]<=-operand[3];
+								operand[1]<=-operand[0];
+							end else begin
+								operand[0]<=operand[3];
+								operand[1]<=operand[0];
+							end
+							phase<=phase+1;
+						end else begin
+							operand[1]<=operand[1]>>1;
+							operand[2]<=operand[2]>>1;
+						end
+					end else begin
+						operand[0]<=operand[0]-operand[1];
+						operand[3]<=operand[3]+operand[2];
+					end
+				end
+				3: StoreResult(delayedBranch?operand[0]:operand[1]);
 			endcase
 		end
 		`STATE_PRINT: begin
