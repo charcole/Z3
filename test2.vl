@@ -1,39 +1,42 @@
-module boss(clk, data, address, writeEnable, forceDynamicRead, forceStaticRead, dataOut, printEnable);
+module boss(clk, data, address, writeEnable, printEnable, romCS, ramCS);
 
 input clk;
-input [7:0] data;
+
+inout [7:0] data;
 
 output [16:0] address;
 output writeEnable;
-output forceDynamicRead;
-output forceStaticRead;
-output [7:0] dataOut;
 output printEnable;
+output romCS;
+output ramCS;
 
 reg [16:0] address;
-reg writeEnable;
-reg forceDynamicRead;
-reg forceStaticRead;
 reg [7:0] dataOut;
 reg printEnable;
+reg writeEnable;
+
+wire romCS;
+wire ramCS;
+
+//`define HARDWARE_PRINT
 
 `define OPER_LARGE 2'b00
 `define OPER_SMALL 2'b01
 `define OPER_VARI  2'b10
 `define OPER_OMIT  2'b11
 
-`define STATE_FETCH_OP		0
-`define STATE_READ_TYPES	1
-`define STATE_READ_OPERS	2
-`define STATE_READ_STORE	3
-`define STATE_READ_BRANCH	4
-`define STATE_DO_OP			5
-`define STATE_READ_FUNCTION	6
-`define STATE_CALL_FUNCTION	7
-`define STATE_RET_FUNCTION	8
-`define STATE_STORE_REGISTER 9
-`define STATE_PRINT			10
-`define STATE_RESET 		11
+`define STATE_RESET 		0
+`define STATE_FETCH_OP		1
+`define STATE_READ_TYPES	2
+`define STATE_READ_OPERS	3
+`define STATE_READ_STORE	4
+`define STATE_READ_BRANCH	5
+`define STATE_DO_OP			6
+`define STATE_READ_FUNCTION	7
+`define STATE_CALL_FUNCTION	8
+`define STATE_RET_FUNCTION	9
+`define STATE_STORE_REGISTER 10
+`define STATE_PRINT			11
 `define STATE_HALT			12
 `define STATE_PRINT_CHAR	13
 `define STATE_DIVIDE		14
@@ -115,18 +118,21 @@ reg printEnable;
 `define PRINTEFFECT_RET1		2
 `define PRINTEFFECT_ABBREVRET	3
 
+reg forceStaticRead;
+reg forceDynamicRead;
+
 reg [3:0] state;
+reg [3:0] phase;
 
 reg [16:0] pc;
-reg [16:0] curPC;
-reg [16:0] globalsAddress;
-reg [16:0] objectTable;
+reg [15:0] globalsAddress;
+reg [15:0] objectTable;
 
 reg readHigh;
 
 reg [4:0] op;
 reg [1:0] operNum;
-reg [0:1] operTypes [4:0];
+reg [1:0] operTypes [4:0];
 reg [15:0] operand [3:0];
 reg [2:0] operandIdx;
 reg [13:0] branch;
@@ -141,31 +147,29 @@ reg [15:0] returnValue;
 
 reg [6:0] opsToRead;
 reg [6:0] currentLocal; 
-reg [17:0] csStack;
-reg [17:0] stackAddress;
+reg [16:0] csStack;
+reg [16:0] stackAddress;
 
 reg [16:0] temp;
-reg [3:0] phase;
 reg [15:0] random;
+
+reg [1:0] alphabet;
+reg [1:0] long;
 
 initial
 begin
 	state=`STATE_RESET;
-	readHigh=0;
-	pc=0;
-	globalsAddress='hF000;
-	operTypes[0]=`OPER_OMIT;
-	operTypes[1]=`OPER_OMIT;
-	operTypes[2]=`OPER_OMIT;
-	operTypes[3]=`OPER_OMIT;
-	operTypes[4]=`OPER_OMIT;
-	opsToRead=0;
-	forceDynamicRead=0;
-	writeEnable=0;
+	forceDynamicRead<=0;
+	forceStaticRead<=0;
+	writeEnable<=0;
 	printEnable<=0;
-	random<=1;
 	phase<=0;
+	readHigh<=0;
 end
+
+assign data = (writeEnable || printEnable)?dataOut:8'bZ;
+assign romCS = !printEnable && !writeEnable && !forceDynamicRead && (forceStaticRead || address[16]==1);
+assign ramCS = !printEnable && (writeEnable || forceDynamicRead || (!forceStaticRead && address[16]==0));
 
 task StoreB;
 	begin
@@ -323,19 +327,11 @@ endtask
 
 task GetRelative;
 	input [1:0] offset;
+	input branch;
 	begin
 		case (phase)
 			0: begin address<=GetObjectAddr(operand[0])+4+offset; phase<=phase+1; end
-			1: StoreResultAndBranch(data, data==0);
-		endcase
-	end
-endtask
-
-task GetParent;
-	begin
-		case (phase)
-			0: begin address<=GetObjectAddr(operand[0])+4; phase<=phase+1; end
-			1: StoreResult(data);
+			1: StoreResultAndBranch(data, branch?data==0:negate);
 		endcase
 	end
 endtask
@@ -631,9 +627,9 @@ task DoOp;
 					$display("Doing op1:%d Operands:%h Store:%h Branch:%h/%d", op, operand[0], store, branch, negate);
 				case (op)
 					`OP1_JZ: DoBranch(operand[0]==0);
-					`OP1_GETSIBLING: GetRelative(1);
-					`OP1_GETCHILD: GetRelative(2);
-					`OP1_GETPARENT: GetParent();
+					`OP1_GETSIBLING: GetRelative(1,1);
+					`OP1_GETCHILD: GetRelative(2,1);
+					`OP1_GETPARENT: GetRelative(0,0);
 					`OP1_GETPROPLEN: FindPropAddrLen(0);
 					`OP1_INC: StoreResult(operand[0]+1);
 					`OP1_DEC: StoreResult(operand[0]-1);
@@ -699,9 +695,6 @@ task DoOp;
 		endcase
 	end
 endtask
-
-reg [1:0] alphabet;
-reg [1:0] long;
 			
 task DoPrint;
 	input [4:0] char;
@@ -766,12 +759,12 @@ begin
 	case(state)
 		`STATE_RESET: begin
 			case (phase)
-				0: begin forceStaticRead<=1; address<='h6; phase<=phase+1; end
+				0: begin random<=1; forceStaticRead<=1; address<='h6; phase<=phase+1; end
 				1: begin address<='h7; phase<=phase+1; pc[15:8]<=data; pc[16]<=0; end
 				2: begin address<='hA; phase<=phase+1; pc[7:0]<=data; end
-				3: begin address<='hB; phase<=phase+1; objectTable[15:8]<=data; objectTable[16]<=0; end
+				3: begin address<='hB; phase<=phase+1; objectTable[15:8]<=data; end
 				4: begin address<='hC; phase<=phase+1; objectTable[7:0]<=data; end
-				5: begin address<='hD; phase<=phase+1; globalsAddress[16:8]<=data; globalsAddress[16]<=0; end
+				5: begin address<='hD; phase<=phase+1; globalsAddress[15:8]<=data; end
 				6: begin address<=0; phase<=phase+1; globalsAddress[7:0]<=data; end
 				7: begin dataOut<=data; writeEnable<=1; phase<=8; end
 				8: begin writeEnable<=0; address<=address+1; if (address[15:0]=='hffff) phase<=9; else phase<=7; end
@@ -863,8 +856,8 @@ begin
 			endcase
 		end
 		`STATE_FETCH_OP: begin
-			curPC<=pc;
 			phase<=0;
+			operTypes[4]<=`OPER_OMIT;
 			$display("Fetching op at %h", pc);
 			case (data[7:6])
 				2'b10: begin
@@ -877,7 +870,7 @@ begin
 					if (data[5:4]==2'b11) begin
 						operNum[1:0]<=`OP_0;
 						case (data[3:0])
-							'h05,'h06,'h0D,'h0F: state<=`STATE_READ_BRANCH;
+							`OP0_SAVE,`OP0_RESTORE,`OP0_VERIFY: state<=`STATE_READ_BRANCH;
 							default: state<=`STATE_DO_OP;
 						endcase
 					end else begin
@@ -978,22 +971,21 @@ begin
 					case (operNum)
 						`OP_1: begin
 							case (op[4:0])
-								'h01,'h02,'h03,'h04,'h08,'h0E,'h0F: state<=`STATE_READ_STORE;
-								'h00: state<=`STATE_READ_BRANCH;
+								`OP1_GETSIBLING,`OP1_GETCHILD,`OP1_GETPARENT,`OP1_GETPROPLEN,`OP1_LOAD,`OP1_NOT: state<=`STATE_READ_STORE;
+								`OP1_JZ: state<=`STATE_READ_BRANCH;
 								default: state<=`STATE_DO_OP;
 							endcase
 						end
 						`OP_2: begin
 							case (op[4:0])
-								'h08,'h09,'h0F,'h10,'h11,'h12,'h13,'h14,'h15,'h16,'h17,'h18,'h19: state<=`STATE_READ_STORE;
-								'h01,'h02,'h03,'h04,'h05,'h06,'h07,'h0A: state<=`STATE_READ_BRANCH;
+								`OP2_OR,`OP2_AND,`OP2_LOADW,`OP2_LOADB,`OP2_GETPROP,`OP2_GETPROPADDR,`OP2_GETNEXTPROP,`OP2_ADD,`OP2_SUB,`OP2_MUL,`OP2_DIV,`OP2_MOD: state<=`STATE_READ_STORE;
+								`OP2_JE,`OP2_JL,`OP2_JG,`OP2_INC_CHK,`OP2_DEC_CHK,`OP2_JIN,`OP2_TEST,`OP2_TESTATTR: state<=`STATE_READ_BRANCH;
 								default: state<=`STATE_DO_OP;
 							endcase
 						end
 						`OP_VAR: begin
 							case (op[4:0])
-								'h00,'h07,'h0C,'h16,'h17,'h18: state<=`STATE_READ_STORE;
-								'h1F: state<=`STATE_READ_BRANCH;
+								`OPVAR_CALL,`OPVAR_RANDOM: state<=`STATE_READ_STORE;
 								default: state<=`STATE_DO_OP;
 							endcase
 						end
@@ -1004,22 +996,11 @@ begin
 			endcase
 		end
 		`STATE_READ_STORE: begin
-			store<=data;
-			case (operNum)
-				`OP_1: begin
-					case (op[4:0])
-						'h01,'h02: state<=`STATE_READ_BRANCH;
-						default: state<=`STATE_DO_OP;
-					endcase
-				end
-				`OP_VAR: begin
-					case (op[4:0])
-						'h17: state<=`STATE_READ_BRANCH;
-						default: state<=`STATE_DO_OP;
-					endcase
-				end
+			case (op[4:0])
+				`OP1_GETSIBLING, `OP1_GETCHILD: state<=`STATE_READ_BRANCH;
 				default: state<=`STATE_DO_OP;
 			endcase
+			store<=data;
 			pc<=pc+1;
 			address<=pc+1;
 		end
@@ -1122,6 +1103,7 @@ begin
 			endcase
 		end
 		`STATE_PRINT: begin
+`ifdef HARDWARE_PRINT
 			case (phase)
 				0: begin delayedValue[15:8]<=data; address<=address+1; phase<=phase+1; end
 				1: begin delayedValue[7:0] <=data; address<=address+1; phase<=phase+1; end
@@ -1168,6 +1150,27 @@ begin
 				9: begin address<=address+1; operand[2][7:0]<=data; phase<=phase+1; end
 				10: begin address<=2*((operand[2][7:0]<<8)|data); phase<=0; end
 			endcase
+`else
+			case (phase)
+				0: begin negate<=data[7]; address<=address+1; phase<=phase+1; end
+				1: begin address<=address+1; phase<=negate?2:0; end
+				2: begin
+					case (returnValue[1:0])
+						`PRINTEFFECT_FETCH: begin
+							address<=pc;
+							state<=`STATE_FETCH_OP;
+						end
+						`PRINTEFFECT_FETCHAFTER: begin
+							pc<=address;
+							state<=`STATE_FETCH_OP;
+						end
+						`PRINTEFFECT_RET1: begin
+							ReturnFunction(1);
+						end
+					endcase
+				end
+			endcase
+`endif
 		end
 		`STATE_PRINT_CHAR: begin
 			address<=pc;
@@ -1185,17 +1188,18 @@ endmodule
 module main();
 
 reg clk;
-reg [7:0] data;
+wire [7:0] data;
 wire [16:0] address;
 wire writeEnable;
-wire forceDynamicRead;
-wire forceStaticRead;
-wire [7:0] dataOut;
 wire printEnable;
+wire romCS;
+wire ramCS;
 
 integer file,readData,i;
 reg [7:0] mem [128*1024:0];
 reg [7:0] dynamicMem [128*1024:0];
+
+assign data=(romCS ? mem[address] : (ramCS ? (writeEnable ? 8'bZ : dynamicMem[address] ) : 8'bZ ) );
 
 initial
 begin
@@ -1208,22 +1212,18 @@ begin
 	for (i=0; i</*505*/1000000; i=i+1) begin
 		clk=1;
 		#5 clk=0;
-		if (writeEnable) begin
-			dynamicMem[address]=dataOut;
-		end else if (!forceStaticRead && (address[16]==0 || forceDynamicRead)) begin
-			data=dynamicMem[address];
-		end else begin
-			data=mem[address];
+		if (ramCS && writeEnable) begin
+			dynamicMem[address]=data;
 		end
 		if (printEnable) begin
-			$display("PRINT: %c", dataOut);
+			$display("PRINT: %c", data);
 		end
-		$display("Mem req: %h WE:%d F:%d/%d D:%h DO:%h", address, writeEnable, forceDynamicRead, forceStaticRead, data, dataOut);
+		$display("Mem req: %h WE:%d PE:%d RoS:%d RaS:%d D:%h", address, writeEnable, printEnable, romCS, ramCS, data);
 	end
 	$finish;
 end
 
-boss b(clk, data, address, writeEnable, forceDynamicRead, forceStaticRead, dataOut, printEnable);
+boss b(clk, data, address, writeEnable, printEnable, romCS, ramCS);
 
 endmodule
 
