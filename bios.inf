@@ -1,0 +1,123 @@
+Constant BufferHeight 320;
+Constant LineStride   30;
+
+[DecodeText
+inputO inputW outputO outputB abbrevTable encodingO encodingB	!inputs
+alpha charWord c char charOut;                     				!temps
+
+alpha=0;
+do
+{
+	charWord = inputO-->inputW;
+	for (c=0: c<3: c++)
+	{
+		char=charWord;
+		if (c==0) char=charWord/1024;
+		else if (c==1) char=charWord/32;
+		char=char&31;
+
+		charOut=-1;
+		if (alpha<=2 && char<=5)
+		{
+			if (char==0)
+			{
+				charOut=' ';
+				alpha=0;
+			}
+			else
+			{
+				if (char>=4)
+					alpha=char-3;
+				else
+					alpha=char+2;
+			}
+		}
+		else if (char==6 && alpha==2)
+		{
+			alpha=6;
+		}
+		else
+		{
+			if (alpha<=2)
+			{
+				charOut=encodingO->(encodingB+32*alpha+char-6);
+				alpha=0;
+			}
+			else if (alpha<=5)
+			{
+				DecodeText(0, abbrevTable-->(32*(alpha-3)+char), outputO, outputB, abbrevTable, encodingO, encodingB);
+				alpha=0;
+			}
+			else if (alpha==6)
+			{
+				alpha=32+char*32;
+			}
+			else
+			{
+				charOut=(alpha-32)|char;
+				alpha=0;
+			}
+		}
+		if (charOut>=0)
+		{
+			outputO=>outputB=charOut;
+			outputB++;
+		}
+	}
+	inputW++;
+}
+until ((charWord&32768)~=0);
+outputO=>outputB=0;
+];
+
+[TextToConsole
+textO textB fontO fontB bitmapW coordsW
+char ptr i a b w x y;
+
+x=0==>coordsW;
+y=2==>coordsW;
+char=textO=>textB;
+while (char)
+{
+	ptr=fontB+char*10;
+	w=fontO->ptr;
+	if (x+w>ScreenW)
+	{
+		y=y+10;
+		if (y>BufferHeight)
+			y=0;
+		a=y*LineStride;
+		b=LineStride*5;
+		while (b)
+		{
+			a==>bitmapW=0;
+			a=a+2;
+			b--;
+		}
+		x=0;
+	}
+	a=7-(x&7);
+	b=2;
+	while (a)
+	{
+		b=b*2;
+		a--;
+	}
+	a=x/8+y*LineStride;
+	for (i=0: i<9: i++)
+	{
+		ptr++;
+		a==>bitmapW=(a==>bitmapW)|((fontO->ptr)*b);
+		a=a+LineStride;
+	}
+	x=x+w;
+	textB++;
+	char=textO=>textB;
+}
+0==>coordsW=x;
+2==>coordsW=y;
+];
+
+[Main;
+quit;
+];

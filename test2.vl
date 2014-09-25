@@ -1,22 +1,30 @@
-module boss(clk, data, address, writeEnable, printEnable, romCS, ramCS);
+module boss(clk, data, address, we, pe, romCS, ramCS, led0, led1, led2);
 
 input clk;
 
 inout [7:0] data;
 
 output [16:0] address;
-output writeEnable;
-output printEnable;
+output we;
+output pe;
 output romCS;
 output ramCS;
+output led0;
+output led1;
+output led2;
 
 reg [16:0] address;
 reg [7:0] dataOut;
 reg printEnable;
 reg writeEnable;
 
+wire we;
+wire pe;
 wire romCS;
 wire ramCS;
+wire led0;
+wire led1;
+wire led2;
 
 //`define HARDWARE_PRINT
 
@@ -168,8 +176,13 @@ begin
 end
 
 assign data = (writeEnable || printEnable)?dataOut:8'bZ;
-assign romCS = !printEnable && !writeEnable && !forceDynamicRead && (forceStaticRead || address[16]==1);
-assign ramCS = !printEnable && (writeEnable || forceDynamicRead || (!forceStaticRead && address[16]==0));
+assign romCS = !(!printEnable && !writeEnable && !forceDynamicRead && (forceStaticRead || address[16]==1));
+assign ramCS = !(!printEnable && (writeEnable || forceDynamicRead || (!forceStaticRead && address[16]==0)));
+assign pe = !printEnable;
+assign we = !writeEnable;
+assign led0 = !address[12];
+assign led1 = !address[13];
+assign led2 = !address[14];
 
 task StoreB;
 	begin
@@ -1194,12 +1207,15 @@ wire writeEnable;
 wire printEnable;
 wire romCS;
 wire ramCS;
+wire led0;
+wire led1;
+wire led2;
 
 integer file,readData,i;
 reg [7:0] mem [128*1024:0];
 reg [7:0] dynamicMem [128*1024:0];
 
-assign data=(romCS ? mem[address] : (ramCS ? (writeEnable ? 8'bZ : dynamicMem[address] ) : 8'bZ ) );
+assign data=(!romCS ? mem[address] : (!ramCS ? (!writeEnable ? 8'bZ : dynamicMem[address] ) : 8'bZ ) );
 
 initial
 begin
@@ -1212,18 +1228,18 @@ begin
 	for (i=0; i</*505*/1000000; i=i+1) begin
 		clk=1;
 		#5 clk=0;
-		if (ramCS && writeEnable) begin
+		if (!ramCS && !writeEnable) begin
 			dynamicMem[address]=data;
 		end
-		if (printEnable) begin
+		if (!printEnable) begin
 			$display("PRINT: %c", data);
 		end
-		$display("Mem req: %h WE:%d PE:%d RoS:%d RaS:%d D:%h", address, writeEnable, printEnable, romCS, ramCS, data);
+		$display("Mem req: %h WE:%d PE:%d RoS:%d RaS:%d D:%h LEDs:%d%d%d", address, !writeEnable, !printEnable, !romCS, !ramCS, data, !led0, !led1, !led2);
 	end
 	$finish;
 end
 
-boss b(clk, data, address, writeEnable, printEnable, romCS, ramCS);
+boss b(clk, data, address, writeEnable, printEnable, romCS, ramCS, led0, led1, led2);
 
 endmodule
 
