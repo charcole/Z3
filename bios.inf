@@ -192,28 +192,28 @@ cScrenY==>contextW=y;
 ];
 
 [UpdateScreen
-ptr size size8; !temps
-	@write_reg $fffe 0; ! Setting fffe sets colour 0
-	@write_reg $fffd 255; ! Setting fffd sets colour 1
+ptr size sizeW; !temps
+	!@write_reg $fffe 0; ! Setting fffe sets colour 0
+	!@write_reg $fffd 255; ! Setting fffd sets colour 1
 	@write_reg 32 0;
 	@write_reg 33 0;
 	ptr=(cBitMpW==>contextW)+(LineStrideW*(cScroll==>contextW));
-	size8=ScrHeight*8;
+	sizeW=LineStrideW*ScrHeight;
 	if ((cScroll==>contextW) + ScrHeight > BufferHeight)
 	{
 		size=BufferHeight-(cScroll==>contextW);
-		size8=size*8;
-		@blit1 ptr size8;
+		sizeW=LineStrideW*size;
+		@blit1 ptr sizeW;
 		ptr=cBitMpW==>contextW;
+		@write_reg 32 0;
 		@write_reg 33 size;
-		size=ScrHeight*8-size;
-		size8=size*8;
+		sizeW=LineStrideW*(ScrHeight-size);
 	}
-	@blit1 ptr size8;
+	@blit1 ptr sizeW;
 ];
 
 [InitScreenRegs;
-@write_reg $ffff $0000; ! Setting ffff resets the screen and primes it for data
+@write_reg $0000 $0000; ! Setting primes the screen for data
 @write_reg $0001 $0100;
 @write_reg $0002 $0700;
 @write_reg $0003 $1030;
@@ -327,5 +327,4 @@ quit;
 [SysInit;
 InitContext();
 InitScreenRegs();
-UpdateScreen();
 ];

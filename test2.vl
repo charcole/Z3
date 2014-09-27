@@ -1,4 +1,4 @@
-module boss(clk, data, address, we, pe, romCS, ramCS, led0, led1, led2);
+module boss(clk, data, address, we, pe, romCS, ramCS, led0, led1, led2, lcdCS, lcdRS, lcdReset);
 
 input clk;
 
@@ -12,11 +12,16 @@ output ramCS;
 output led0;
 output led1;
 output led2;
+output lcdCS;
+output lcdRS;
+output lcdReset;
 
 reg [16:0] address;
 reg [7:0] dataOut;
 reg printEnable;
 reg writeEnable;
+reg rlcdRS;
+reg rlcdReset;
 
 wire we;
 wire pe;
@@ -25,16 +30,19 @@ wire ramCS;
 wire led0;
 wire led1;
 wire led2;
+wire lcdCS;
+wire lcdRS;
+wire lcdReset;
 
 //`define HARDWARE_PRINT
 //`define REAL_HARDWARE
 
 // The callback addresses must match those in the BIOS
-`define INIT_CALLBACK		'hfe7d
-`define PRINT_CALLBACK		'hfe15
-`define PRINTCHAR_CALLBACK	'hfe3b
-`define PRINTNUM_CALLBACK	'hfe50
-`define READ_CALLBACK		'hfe79
+`define INIT_CALLBACK		'hfe78
+`define PRINT_CALLBACK		'hfe10
+`define PRINTCHAR_CALLBACK	'hfe36
+`define PRINTNUM_CALLBACK	'hfe4b
+`define READ_CALLBACK		'hfe74
 
 `define OPER_LARGE 2'b00
 `define OPER_SMALL 2'b01
@@ -53,9 +61,9 @@ wire led2;
 `define STATE_RET_FUNCTION	9
 `define STATE_STORE_REGISTER 10
 `define STATE_PRINT			11
-`define STATE_HALT			12
-`define STATE_PRINT_CHAR	13
-`define STATE_DIVIDE		14
+`define STATE_DIVIDE		12
+`define STATE_HALT			13
+`define STATE_PRINT_CHAR	14
 
 `define OP_0	2'b00
 `define OP_1	2'b01
@@ -178,6 +186,9 @@ reg nextLoadIsDynamic;
 
 reg [4:0] divider;
 
+reg [15:0] blitCol0;
+reg [15:0] blitCol1;
+
 initial
 begin
 	state=`STATE_RESET;
@@ -194,11 +205,20 @@ end
 assign data = (writeEnable || printEnable)?dataOut:8'bZ;
 assign romCS = !(!printEnable && !writeEnable && !forceDynamicRead && (forceStaticRead || address[16]==1));
 assign ramCS = !(!printEnable && (writeEnable || forceDynamicRead || (!forceStaticRead && address[16]==0)));
-assign pe = !printEnable;
+assign pe = !printEnable 
+`ifndef HARDWARE_PRINT
+`ifdef REAL_HARDWARE // Strobe over first part of cycle
+	|| divider[4] || divider==0
+`endif
+`endif
+;
 assign we = !writeEnable;
 assign led0 = !address[12];
 assign led1 = !address[13];
 assign led2 = !address[14];
+assign lcdCS = pe;
+assign lcdRS = rlcdRS;
+assign lcdReset = rlcdReset;
 
 task StoreB;
 	begin
@@ -663,6 +683,64 @@ task SRead;
 	end
 endtask
 
+task WriteReg;
+	begin
+		case (phase)
+			0: begin rlcdRS<=0; phase<=phase+1; end 
+			1: begin dataOut<=operand[0][15:8]; printEnable<=1; phase<=phase+1; end
+			2: begin dataOut<=operand[0][7:0]; if (operand[0]==0) phase<=4; else phase<=phase+1; end
+			3: begin rlcdRS<=1; printEnable<=0; phase<=phase+1; end
+			4: begin dataOut<=operand[1][15:8]; printEnable<=1; phase<=phase+1; end
+			5: begin dataOut<=operand[1][7:0]; phase<=phase+1; end
+			6: begin printEnable<=0; address<=pc; state=`STATE_FETCH_OP; end
+		endcase
+	end
+endtask
+
+task Blit1;
+	begin
+		case (phase)
+			0: begin forceDynamicRead<=1; rlcdRS<=0; phase<=phase+1; end
+			1: begin dataOut<=0; printEnable<=1; phase<=phase+1; end
+			2: begin address<=operand[0]*2; dataOut<=34; returnValue<=0; phase<=phase+1; end
+			3: begin
+				rlcdRS<=1;
+				printEnable<=0;
+				if (operand[1]==0) begin
+					forceDynamicRead<=0;
+					address<=pc;
+					state<=`STATE_FETCH_OP;
+				end
+				phase<=phase+1;
+			end
+			4: begin
+				store<=data;
+				dataOut<=data[7]?blitCol1[15:8]:blitCol0[15:8];
+				printEnable<=1;
+				phase<=6;
+			end
+			5: begin
+				dataOut<=store[7]?blitCol1[15:8]:blitCol0[15:8];
+				printEnable<=1;
+				phase<=phase+1;
+			end
+			6: begin
+				dataOut<=store[7]?blitCol1[7:0]:blitCol0[7:0];
+				store[7:1]=store[6:0];
+				returnValue<=returnValue+1;
+				if (returnValue[2:0]==7) begin
+					if (returnValue[3:0]==15)
+						operand[1]=operand[1]-1;
+					phase<=3;
+					address<=address+1;
+				end else begin
+					phase<=5;
+				end
+			end
+		endcase
+	end
+endtask
+
 task DoOp;
 	begin
 		case (operNum)
@@ -737,8 +815,8 @@ task DoOp;
 					`OP2_MUL: StoreResult($signed(operand[0])*$signed(operand[1]));
 					`OP2_DIV: begin state=`STATE_DIVIDE; delayedBranch<=0; end
 					`OP2_MOD: begin state=`STATE_DIVIDE; delayedBranch<=1; end
-					`OP2_BLIT1: begin $display("Blit %h %d", operand[0], operand[1]); state=`STATE_FETCH_OP; end
-					`OP2_WRITEREG: begin $display("Reg %h %h", operand[0], operand[1]); state=`STATE_FETCH_OP; end
+					`OP2_BLIT1: Blit1();
+					`OP2_WRITEREG: WriteReg();
 					default: state<=`STATE_HALT;
 				endcase
 			end
@@ -832,7 +910,7 @@ begin
 	case(state)
 		`STATE_RESET: begin
 			case (phase)
-				0: begin random<=1; forceStaticRead<=1; address<='h6; phase<=phase+1; end
+				0: begin printEnable<=0; random<=1; forceStaticRead<=1; address<='h6; phase<=phase+1; end
 				1: begin address<='h7; phase<=phase+1; pc[15:8]<=data; pc[16]<=0; end
 				2: begin address<='hA; phase<=phase+1; pc[7:0]<=data; end
 				3: begin address<='hB; phase<=phase+1; objectTable[15:8]<=data; end
@@ -842,7 +920,8 @@ begin
 				7: begin dataOut<=data; writeEnable<=1; phase<=8; end
 				8: begin writeEnable<=0; address<=address+1; if (address[15:0]=='hffff) phase<=9; else phase<=7; end
 				9: begin writeEnable<=1; dataOut<=0; address<=address+1; if (address[15:0]=='hffff) begin writeEnable<=0; phase<=10; end end
-				10: begin
+				10: begin blitCol0<='hffff; blitCol1<=0; rlcdReset<=address[10]; rlcdRS<=1; printEnable<=0; address<=address+1; if (address[10:0]=='h7ff) phase<=11; end
+				11: begin
 					address<=pc;
 					forceStaticRead<=0;
 					stackAddress<=64*1024;
@@ -1247,11 +1326,13 @@ begin
 			end
 `endif
 		end
+`ifdef HARDWARE_PRINT
 		`STATE_PRINT_CHAR: begin
 			address<=pc;
 			printEnable<=0;
 			state<=`STATE_FETCH_OP;
 		end
+`endif
 		`STATE_HALT: begin
 			$display("HALT");
 		end
@@ -1276,6 +1357,9 @@ wire ramCS;
 wire led0;
 wire led1;
 wire led2;
+wire lcdCS;
+wire lcdRS;
+wire lcdReset;
 
 integer file,readData,i,j;
 reg [7:0] mem [128*1024:0];
@@ -1298,9 +1382,11 @@ begin
 		if (!ramCS && !writeEnable) begin
 			dynamicMem[address]=data;
 		end
+`ifdef HARDWARE_PRINT
 		if (!printEnable) begin
 			$display("PRINT: %c", data);
 		end
+`endif
 		if (b.state==`STATE_HALT) begin
 			file=$fopen("ram.dat", "wb");
 			for (i=0; i<'h1b500; i=i+16) begin
@@ -1324,12 +1410,12 @@ begin
 			$fclose(file);
 			$finish;
 		end
-		$display("Mem req: %h WE:%d PE:%d RoS:%d RaS:%d D:%h LEDs:%d%d%d Div:%d", address, !writeEnable, !printEnable, !romCS, !ramCS, data, !led0, !led1, !led2, b.divider);
+		$display("Mem req: %h WE:%d PE:%d%d%d%d RoS:%d RaS:%d D:%h LEDs:%d%d%d", address, !writeEnable, printEnable, lcdCS, lcdRS, lcdReset, !romCS, !ramCS, data, !led0, !led1, !led2);
 	end
 	$finish;
 end
 
-boss b(clk, data, address, writeEnable, printEnable, romCS, ramCS, led0, led1, led2);
+boss b(clk, data, address, writeEnable, printEnable, romCS, ramCS, led0, led1, led2, lcdCS, lcdRS, lcdReset);
 
 endmodule
 

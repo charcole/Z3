@@ -69,14 +69,9 @@
 4648 (101%)		- Full (RemoveObj calls insert obj)
 4586 (100%)		- Full (fussed Pull) <- Yay!
 
-Todo:
-	Improve print system	(Problem: Abbreviations + print char/num/newline)
-	Lexical analysis		(Problem: Dictionary)
-
-	Possible improvement: Print system->Print 5-bit ZSCII encoded. Removes
-						   ZSCII->ASCII conversion. Maybe harder due to reset
-						   problems (top bits?)
-						  BIOS (for print/sread) <- Slippery slope
+4353 (94%)		- Print/PrintChar/PrintNum BIOS
+4522 (98%)		- Blit and writeReg ops
+4533 (98%)      - + Added extra output pins (need correct assignment)
 
 Moya
 Ellie/Ally
@@ -84,5 +79,5 @@ Laura
 Nicky
 Sue
 Faith
-
+Sucan
 Jeff
