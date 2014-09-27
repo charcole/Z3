@@ -51,10 +51,9 @@ do
 	charWord = inputO-->inputW;
 	for (c=0: c<3: c++)
 	{
-		char=charWord;
-		if (c==0) char=charWord/1024;
-		else if (c==1) char=charWord/32;
-		char=char&31;
+		if (c==0) char=(charWord&$7c00)/1024;
+		else if (c==1) char=(charWord&$3e0)/32;
+		else char=charWord&31;
 
 		charOut=-1;
 		if (alpha<=2 && char<=5)
@@ -80,7 +79,7 @@ do
 		{
 			if (alpha<=2)
 			{
-				charOut=encodingO->(encodingB+32*alpha+char-6);
+				charOut=encodingO->(encodingB+26*alpha+char-6);
 				alpha=0;
 			}
 			else if (alpha<=5)
@@ -108,7 +107,7 @@ do
 	}
 	inputW++;
 }
-until ((charWord&32768)~=0);
+until (charWord<0);
 outputO=>outputB=0;
 
 cTextB==>contextW=outputB;
@@ -245,6 +244,7 @@ cTextB==>contextW=cBitMpW==>contextW-MaxTextSize;
 printO printW;
 DecodeText(printO, printW);
 TextToConsole();
+cTextB==>contextW=(cBitMpW==>contextW-MaxTextSize); ! reset buffer for next time
 rtrue;
 ];
 
@@ -253,8 +253,9 @@ char
 textO textB;
 textO=cTextO==>contextW;
 textB=cTextB==>contextW;
-textO->textB=char; textB++;
-textO->textB=0;
+textO=>textB=char;
+textB++;
+textO=>textB=0;
 TextToConsole();
 rtrue;
 ];

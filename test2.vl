@@ -27,6 +27,7 @@ wire led1;
 wire led2;
 
 //`define HARDWARE_PRINT
+//`define REAL_HARDWARE
 
 `define OPER_LARGE 2'b00
 `define OPER_SMALL 2'b01
@@ -68,6 +69,7 @@ wire led2;
 `define OP0_NEWLINE	'hB
 `define OP0_SHOWSTATUS	'hC
 `define OP0_VERIFY	'hD
+`define OP0_DYNAMIC	'hF
 
 `define OP1_JZ		'h0
 `define OP1_GETSIBLING 'h1
@@ -109,6 +111,8 @@ wire led2;
 `define OP2_MUL		'h16
 `define OP2_DIV		'h17
 `define OP2_MOD		'h18
+`define OP2_BLIT1	'h1D
+`define OP2_WRITEREG 'h1E
 
 `define OPVAR_CALL   'h0
 `define OPVAR_STOREW 'h1
@@ -125,6 +129,12 @@ wire led2;
 `define PRINTEFFECT_FETCHAFTER	1
 `define PRINTEFFECT_RET1		2
 `define PRINTEFFECT_ABBREVRET	3
+
+`define INIT_CALLBACK		'hfe40
+`define PRINT_CALLBACK		'hfdeb
+`define PRINTCHAR_CALLBACK	'hfdfe
+`define PRINTNUM_CALLBACK	'hfe13
+`define READ_CALLBACK		'hfe3c
 
 reg forceStaticRead;
 reg forceDynamicRead;
@@ -163,6 +173,9 @@ reg [15:0] random;
 
 reg [1:0] alphabet;
 reg [1:0] long;
+reg nextLoadIsDynamic;
+
+reg [4:0] divider;
 
 initial
 begin
@@ -173,6 +186,8 @@ begin
 	printEnable<=0;
 	phase<=0;
 	readHigh<=0;
+	divider<=0;
+	nextLoadIsDynamic<=0;
 end
 
 assign data = (writeEnable || printEnable)?dataOut:8'bZ;
@@ -187,7 +202,7 @@ assign led2 = !address[14];
 task StoreB;
 	begin
 		case (phase)
-			0: begin address<=operand[0]+operand[1]; writeEnable<=1; dataOut<=operand[2][7:0]; phase<=phase+1; end
+			0: begin nextLoadIsDynamic<=0; address<=operand[0]+operand[1]; writeEnable<=1; dataOut<=operand[2][7:0]; phase<=phase+1; end
 			1: begin address<=pc; writeEnable<=0; state<=`STATE_FETCH_OP; phase<=0; end
 		endcase
 	end
@@ -196,7 +211,7 @@ endtask
 task StoreW;
 	begin
 		case (phase)
-			0: begin address<=operand[0]+operand[1]+0; writeEnable<=1; dataOut<=operand[2][15:8]; phase<=phase+1; end
+			0: begin nextLoadIsDynamic<=0; address<=operand[0]+operand[1]*2; writeEnable<=1; dataOut<=operand[2][15:8]; phase<=phase+1; end
 			1: begin address<=address+1; dataOut<=operand[2][7:0]; phase<=phase+1; end
 			2: begin address<=pc; writeEnable<=0; state<=`STATE_FETCH_OP; phase<=0; end
 		endcase
@@ -241,13 +256,11 @@ task ReturnFunction;
 endtask
 
 task CallFunction;
+	input doubleReturn;
 	begin
-		if (operand[0]==0) begin
-			ReturnFunction(0);
-		end else begin
-			phase<=0;
-			state<=`STATE_CALL_FUNCTION;
-		end
+		negate<=doubleReturn;
+		phase<=0;
+		state<=`STATE_CALL_FUNCTION;
 	end
 endtask
 
@@ -277,6 +290,8 @@ task LoadAndStore;
 	input		 word;
 	begin
 		if (phase==0) begin
+			forceDynamicRead<=nextLoadIsDynamic;
+			nextLoadIsDynamic<=0;
 			address<=loadAddress;
 			phase<=phase+1;
 		end else if (phase==1) begin
@@ -285,9 +300,11 @@ task LoadAndStore;
 				address<=loadAddress+1;
 				phase<=phase+1;
 			end else begin
+				forceDynamicRead<=0;
 				StoreResult(data);
 			end
 		end else begin
+			forceDynamicRead<=0;
 			StoreResult((temp[7:0]<<8)|data);
 		end
 	end
@@ -588,6 +605,7 @@ endtask
 
 task PrintNum;
 	begin
+`ifdef HARDWARE_PRINT
 		case (phase)
 			0: begin negate<=0; operand[1]<=1; operand[2][2:0]<=2; operand[3][3:0]<=0; phase<=phase+1; end
 			1,2,3,4: begin operand[1]<=(operand[1]<<3)+(operand[1]<<1); printEnable<=0; phase<=phase+1; end
@@ -608,11 +626,42 @@ task PrintNum;
 			end
 			6: begin printEnable<=0; state<=`STATE_FETCH_OP; end
 		endcase
+`else
+		operand[0]<=`PRINTNUM_CALLBACK;
+		operand[1]<=operand[0];
+		operTypes[1]<=`OPER_LARGE;
+		operTypes[2]<=`OPER_OMIT;
+		CallFunction(0);
+`endif
+	end
+endtask
+
+task PrintChar;
+	input [7:0] char;
+	begin
+`ifdef HARDWARE_PRINT
+		printEnable<=1;
+		dataOut<=char;
+		state<=`STATE_PRINT_CHAR;
+`else
+		operand[0]<=`PRINTCHAR_CALLBACK;
+		operand[1]<=char;
+		operTypes[1]<=`OPER_LARGE;
+		operTypes[2]<=`OPER_OMIT;
+		CallFunction(0);
+`endif
+	end
+endtask
+
+task SRead;
+	begin
+		operand[0]<=`READ_CALLBACK;
+		operTypes[1]<=`OPER_OMIT;
+		CallFunction(0);
 	end
 endtask
 
 task DoOp;
-	input nextState;
 	begin
 		case (operNum)
 			`OP_0: begin
@@ -628,10 +677,11 @@ task DoOp;
 					`OP0_RESTART: state<=`STATE_RESET;
 					`OP0_RETPOP: Pull(1);
 					`OP0_POP: begin stackAddress<=stackAddress-2; state<=`STATE_FETCH_OP; end
-					`OP0_QUIT: state<=`STATE_HALT;
-					`OP0_NEWLINE: begin printEnable<=1; dataOut<=10; state<=`STATE_PRINT_CHAR; end
+					`OP0_QUIT: begin $display("quit"); state<=`STATE_HALT; end
+					`OP0_NEWLINE: PrintChar(10);
 					`OP0_SHOWSTATUS: state<=`STATE_FETCH_OP;
 					`OP0_VERIFY: DoBranch(1);
+					`OP0_DYNAMIC: begin nextLoadIsDynamic<=1; state<=`STATE_FETCH_OP; end
 					default: state<=`STATE_HALT;
 				endcase
 			end
@@ -685,6 +735,8 @@ task DoOp;
 					`OP2_MUL: StoreResult($signed(operand[0])*$signed(operand[1]));
 					`OP2_DIV: begin state=`STATE_DIVIDE; delayedBranch<=0; end
 					`OP2_MOD: begin state=`STATE_DIVIDE; delayedBranch<=1; end
+					`OP2_BLIT1: begin $display("Blit %h %d", operand[0], operand[1]); state=`STATE_FETCH_OP; end
+					`OP2_WRITEREG: begin $display("Reg %h %h", operand[0], operand[1]); state=`STATE_FETCH_OP; end
 					default: state<=`STATE_HALT;
 				endcase
 			end
@@ -692,12 +744,12 @@ task DoOp;
 				if (phase==0)
 					$display("Doing opvar:%d Operands:%h %h %h %h Store:%h Branch:%h/%d/%h", op, operand[0], operand[1], operand[2], operand[3], store, branch, negate, $signed(pc)+$signed(branch-2));
 				case (op)
-					`OPVAR_CALL: CallFunction();
+					`OPVAR_CALL: if (operand[0]==0) ReturnFunction(0); else CallFunction(0);
 					`OPVAR_STOREW: StoreW();
 					`OPVAR_STOREB: StoreB();
 					`OPVAR_PUTPROP: SetProp();
-					`OPVAR_SREAD: begin $display("SREAD"); state<=`STATE_HALT; end
-					`OPVAR_PRINTCHAR: begin printEnable<=1; dataOut<=operand[0]; state<=`STATE_PRINT_CHAR; end
+					`OPVAR_SREAD: SRead();
+					`OPVAR_PRINTCHAR: PrintChar(operand[0]);
 					`OPVAR_PRINTNUM: PrintNum();
 					`OPVAR_RANDOM: Random();
 					`OPVAR_PUSH: StoreRegisterAndBranch(0, operand[0], negate);
@@ -709,6 +761,7 @@ task DoOp;
 	end
 endtask
 			
+`ifdef HARDWARE_PRINT
 task DoPrint;
 	input [4:0] char;
 	begin
@@ -766,8 +819,13 @@ task DoPrint;
 		end
 	end
 endtask
+`endif
 
 always @ (posedge clk)
+`ifdef REAL_HARDWARE
+begin
+if (divider==0)
+`endif
 begin
 	case(state)
 		`STATE_RESET: begin
@@ -782,15 +840,19 @@ begin
 				7: begin dataOut<=data; writeEnable<=1; phase<=8; end
 				8: begin writeEnable<=0; address<=address+1; if (address[15:0]=='hffff) phase<=9; else phase<=7; end
 				9: begin
-					address<=pc; phase<=0; forceStaticRead<=0; state<=`STATE_FETCH_OP;
+					address<=pc;
+					forceStaticRead<=0;
 					stackAddress<=64*1024;
 					csStack<=65*1024;
+					operand[0]<=`INIT_CALLBACK;
+					operTypes[1]<=`OPER_OMIT;
+					CallFunction(0);
 				end
 			endcase
 		end
 		`STATE_CALL_FUNCTION: begin
 			case (phase)
-				0: begin address<=csStack+phase; writeEnable<=1; dataOut<=pc[16]; phase<=phase+1; end
+				0: begin $display("Call function %h", operand[0]*2); address<=csStack+phase; writeEnable<=1; dataOut<=(negate<<1)|pc[16]; phase<=phase+1; end
 				1: begin address<=address+1; dataOut<=pc[15:8]; phase<=phase+1; end
 				2: begin address<=address+1; dataOut<=pc[7:0]; phase<=phase+1; end
 				3: begin address<=address+1; dataOut<=stackAddress[16]; phase<=phase+1; end
@@ -810,7 +872,7 @@ begin
 		`STATE_RET_FUNCTION: begin
 			case (phase)
 				0: begin csStack<=csStack-37; address<=csStack-37; forceDynamicRead<=1; phase<=phase+1; end
-				1: begin pc[16]=data[0]; address<=address+1; phase<=phase+1; end
+				1: begin pc[16]=data[0]; negate=data[1]; address<=address+1; phase<=phase+1; end
 				2: begin pc[15:8]=data; address<=address+1; phase<=phase+1; end
 				3: begin pc[7:0]=data; address<=address+1; phase<=phase+1; end
 				4: begin stackAddress[16]=data[0]; address<=address+1; phase<=phase+1; end
@@ -818,11 +880,15 @@ begin
 				6: begin stackAddress[7:0]=data; address<=address+1; phase<=phase+1; end
 				7: begin
 					forceDynamicRead<=0;
-					StoreRegisterAndBranch(data, returnValue, negate);
+					if (negate)
+						phase<=0;
+					else
+						StoreRegisterAndBranch(data, returnValue, negate);
 				end
 			endcase
 		end
 		`STATE_READ_FUNCTION: begin
+			$display("Read function: %h %h %h %d %d %d\n", operand[1], operand[2], operand[3], operTypes[1], operTypes[2], operTypes[3]);
 			case (phase)
 				0: begin
 					if (data==0) begin
@@ -1037,7 +1103,7 @@ begin
 			address<=pc+1;
 		end
 		`STATE_DO_OP: begin
-			DoOp(`STATE_FETCH_OP);
+			DoOp();
 		end
 		`STATE_STORE_REGISTER: begin
 			case (phase)
@@ -1073,6 +1139,7 @@ begin
 		`STATE_DIVIDE: begin
 			case (phase)
 				0: begin
+					$display("Div ops: %d %d\n", operand[0], operand[1]);
 					negate<=operand[0][15];
 					if (operand[0]<0)
 						operand[0]<=-operand[0];
@@ -1085,15 +1152,17 @@ begin
 					phase<=phase+1;
 				end
 				1: begin
-					if (!operand[1][15]) begin
+					$display("Div 1: %d %d %d %d\n", operand[0], operand[1], operand[2], operand[3]);
+					if (operand[1][15] || operand[0]<=operand[1]) begin
+						phase<=phase+1;
+					end else begin
 						operand[1]<=operand[1]<<1;
 						operand[2]<=operand[2]<<1;
-					end else begin
-						phase<=phase+1;
 					end
 				end
 				2: begin
-					if (operand[1]>operand[2]) begin
+					$display("Div 2: %d %d %d %d\n", operand[0], operand[1], operand[2], operand[3]);
+					if (operand[1]>operand[0]) begin
 						if (operand[2]==1) begin
 							if (negate) begin
 								operand[0]<=-operand[3];
@@ -1112,7 +1181,10 @@ begin
 						operand[3]<=operand[3]+operand[2];
 					end
 				end
-				3: StoreResult(delayedBranch?operand[0]:operand[1]);
+				3: begin
+					$display("Div result: %d %d\n", operand[0], operand[1]);
+					StoreResult(delayedBranch?operand[1]:operand[0]);
+				end
 			endcase
 		end
 		`STATE_PRINT: begin
@@ -1164,25 +1236,17 @@ begin
 				10: begin address<=2*((operand[2][7:0]<<8)|data); phase<=0; end
 			endcase
 `else
-			case (phase)
-				0: begin negate<=data[7]; address<=address+1; phase<=phase+1; end
-				1: begin address<=address+1; phase<=negate?2:0; end
-				2: begin
-					case (returnValue[1:0])
-						`PRINTEFFECT_FETCH: begin
-							address<=pc;
-							state<=`STATE_FETCH_OP;
-						end
-						`PRINTEFFECT_FETCHAFTER: begin
-							pc<=address;
-							state<=`STATE_FETCH_OP;
-						end
-						`PRINTEFFECT_RET1: begin
-							ReturnFunction(1);
-						end
-					endcase
-				end
-			endcase
+			if (data[7] || returnValue[1:0]!=`PRINTEFFECT_FETCHAFTER) begin
+				if (returnValue[1:0]==`PRINTEFFECT_FETCHAFTER)
+					pc<=address+2;
+				operand[0]<=`PRINT_CALLBACK; 
+				$display("Print from %h\n", temp);
+				operand[1]<=temp[0]; operand[2]<=temp[16:1];
+				operTypes[1]=`OPER_LARGE; operTypes[2]=`OPER_LARGE; operTypes[3]=`OPER_OMIT;
+				CallFunction(returnValue[1:0]==`PRINTEFFECT_RET1);
+			end else begin
+				address<=address+2;
+			end
 `endif
 		end
 		`STATE_PRINT_CHAR: begin
@@ -1191,10 +1255,14 @@ begin
 			state<=`STATE_FETCH_OP;
 		end
 		`STATE_HALT: begin
-			$finish;
+			$display("HALT");
 		end
 	endcase
 end
+`ifdef REAL_HARDWARE
+divider<=divider+1;
+end
+`endif
 
 endmodule
 
@@ -1220,10 +1288,11 @@ assign data=(!romCS ? mem[address] : (!ramCS ? (!writeEnable ? 8'bZ : dynamicMem
 initial
 begin
 	$display("Welcome");
-	file=$fopen("Planetfa.z3","rb");
+	file=$fopen("rom.z3","rb");
 	readData=$fread(mem, file);
 	$display("File read:%h %d", file, readData);
 	$fclose(file);
+	b.divider=0;
 	//$monitor("%h %h %h State:%d(%d) Op:%h Num:%h OperType:%h%h%h%h OperIdx:%d Operand:%h %h Store:%h Branch:%h", clk, data, address, b.state, b.phase, b.op, b.operNum, b.operTypes[0], b.operTypes[1], b.operTypes[2], b.operTypes[3], b.operandIdx, b.operand[0], b.operand[1], b.store, b.branch);
 	for (i=0; i</*505*/1000000; i=i+1) begin
 		clk=1;
@@ -1234,7 +1303,13 @@ begin
 		if (!printEnable) begin
 			$display("PRINT: %c", data);
 		end
-		$display("Mem req: %h WE:%d PE:%d RoS:%d RaS:%d D:%h LEDs:%d%d%d", address, !writeEnable, !printEnable, !romCS, !ramCS, data, !led0, !led1, !led2);
+		if (b.state==`STATE_HALT) begin
+			file=$fopen("ram.dat", "wb");
+			$fwrite(dynamicMem, file);
+			$fclose(file);
+			$finish;
+		end
+		$display("Mem req: %h WE:%d PE:%d RoS:%d RaS:%d D:%h LEDs:%d%d%d Div:%d", address, !writeEnable, !printEnable, !romCS, !ramCS, data, !led0, !led1, !led2, b.divider);
 	end
 	$finish;
 end
