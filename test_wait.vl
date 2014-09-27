@@ -1,0 +1,106 @@
+module boss(clk, address, data);
+
+input clk;
+output [16:0] address;
+input [7:0] data;
+
+reg [16:0] address;
+
+reg [16:0] requestAddress [3:0];
+reg [16:0] currentAddress;
+reg [31:0] requestHead;
+reg [31:0] requestTail;
+reg [7:0] requestReads [7:0];
+
+initial
+begin
+	requestHead=0;
+	requestTail=0;
+end
+
+task AddRequest;
+	input [16:0] location;
+	begin
+		wait (requestHead!=requestTail+3);
+		requestAddress[requestHead&3]<=location;
+		requestHead<=requestHead+1;
+		#1;
+	end
+endtask
+
+task Sync;
+	input [3:0] offset;
+	begin
+		wait (requestHead<=requestTail+offset);
+	end
+endtask
+
+function [7:0] ReadRequest;
+	input [3:0] offset;
+	begin
+		ReadRequest=requestReads[(requestHead-offset)&7];
+	end
+endfunction
+
+always @(posedge clk)
+begin
+	$display("Head:%d Tail:%d Cur:%h Req:%h", requestHead, requestTail, currentAddress, requestAddress[requestTail&3]);
+	if (requestHead!=requestTail && currentAddress==requestAddress[requestTail&3]) begin
+	    $display("Read:%d (%d)", data, requestTail);
+		requestReads[requestTail&7]<=data;
+		requestTail<=requestTail+1;
+	end
+end
+
+always @(negedge clk)
+begin
+	address<=requestAddress[requestTail&3];
+	currentAddress<=requestAddress[requestTail&3];
+end
+
+always @(posedge clk)
+begin
+	AddRequest(1);
+	Sync(0);
+	$display("Get1:%d", ReadRequest(1));
+	AddRequest(2);
+	Sync(0);
+	$display("Get2:%d", ReadRequest(1));
+	AddRequest(12);
+	AddRequest(13);
+	AddRequest(14);
+	AddRequest(15);
+	AddRequest(16);
+	Sync(3);
+	$display("Get12:%d", ReadRequest(5));
+	$display("Get13:%d", ReadRequest(4));
+	Sync(0);
+	$display("Get14:%d", ReadRequest(3));
+	$display("Get15:%d", ReadRequest(2));
+	$display("Get16:%d", ReadRequest(1));
+end
+
+endmodule
+
+module main();
+
+reg clk;
+reg [7:0] data;
+wire [16:0] address;
+
+boss b(clk, address, data);
+
+integer i;
+
+initial
+begin
+	$display("Welcome");
+	//$monitor("Clk:%d Addr:%h Data:%h Head:%d Tail:%d", clk, address, data, b.requestHead, b.requestTail);
+	for (i=0; i<10; i=i+1) begin
+		#10 clk=1;
+		#10 clk=0;
+		#10 data=address*2;
+	end
+end
+
+endmodule

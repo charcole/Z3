@@ -1,10 +1,50 @@
-Constant BufferHeight 320;
-Constant LineStride   30;
+Constant ScrWidth     = 240;
+Constant ScrHeight    = 320;
+Constant BufferHeight = 640;
+Constant LineStride   = 30;
+Constant LineStrideW  = 15;
+
+Constant cAbbrev      = 0;
+Constant cEncodO      = 2;
+Constant cEncodB      = 4;
+Constant cScrenX	  = 8;
+Constant cScrenY	  = 10;
+Constant cFontO		  = 12;
+Constant cFontB		  = 14;
+Constant cBitMpW	  = 16;
+Constant cScroll	  = 18;
+Constant cTextO		  = 20;
+Constant cTextB		  = 22;
+Constant MaxTextSize  = $400;
+
+Constant contextW     = $E800; ! $1F000
+
+! Code should start at $1F800
+! Font + Encoding data is directly before
+! Game must be smaller than $1F200 (124.75Kb) to fit in BIOS
+
+! BitMap buffer is at the top of the high RAM (18.75Kb)
+! Scratch buffer is below the bitmap and is 1Kb
+! Bottom of high RAM are the stacks growing up
+
+[Main;
+! Used as a table to pick out addresses of functions
+SysInit();
+SysPrint();
+SysPrintChar();
+SysPrintNum();
+SysRead();
+];
 
 [DecodeText
-inputO inputW outputO outputB abbrevTable encodingO encodingB	!inputs
-alpha charWord c char charOut;                     				!temps
+inputO inputW !inputs
+outputO outputB abbrevTable encodingO encodingB alpha charWord c char charOut; !temps
 
+outputO=cTextO==>contextW;
+outputB=cTextB==>contextW;
+abbrevTable=cAbbrev==>contextW;
+encodingO=cEncodO==>contextW;
+encodingB=cEncodB==>contextW;
 alpha=0;
 do
 {
@@ -45,7 +85,9 @@ do
 			}
 			else if (alpha<=5)
 			{
-				DecodeText(0, abbrevTable-->(32*(alpha-3)+char), outputO, outputB, abbrevTable, encodingO, encodingB);
+				cTextB==>contextW=outputB;
+				DecodeText(abbrevTable-->(32*(alpha-3)+char), 0);
+				outputB=cTextB==>contextW;
 				alpha=0;
 			}
 			else if (alpha==6)
@@ -68,20 +110,26 @@ do
 }
 until ((charWord&32768)~=0);
 outputO=>outputB=0;
+
+cTextB==>contextW=outputB;
 ];
 
 [TextToConsole
-textO textB fontO fontB bitmapW coordsW
-char ptr i a b w x y;
+textO textB fontO fontB bitmapW char ptr i a b w x y;
 
-x=0==>coordsW;
-y=2==>coordsW;
+textO=cTextO==>contextW;
+textB=cTextB==>contextW;
+x=cScrenX==>contextW;
+y=cScrenY==>contextW;
+fontO=cFontO==>contextW;
+fontB=cFontB==>contextW;
+bitmapW=cBitMpW==>contextW;
 char=textO=>textB;
 while (char)
 {
 	ptr=fontB+char*10;
 	w=fontO->ptr;
-	if (x+w>ScreenW)
+	if (x+w>ScrWidth || char=='\n')
 	{
 		y=y+10;
 		if (y>BufferHeight)
@@ -114,10 +162,150 @@ while (char)
 	textB++;
 	char=textO=>textB;
 }
-0==>coordsW=x;
-2==>coordsW=y;
+cScrenX==>contextW=x;
+cScrenY==>contextW=y;
 ];
 
-[Main;
+[UpdateScreen
+ptr size size8; !temps
+	@write_reg $fffe 0; ! Setting fffe sets colour 0
+	@write_reg $fffd 255; ! Setting fffd sets colour 1
+	@write_reg 32 0;
+	@write_reg 33 0;
+	ptr=(cBitMpW==>contextW)+(LineStrideW*(cScroll==>contextW));
+	size8=ScrHeight*8;
+	if ((cScroll==>contextW) + ScrHeight > BufferHeight)
+	{
+		size=BufferHeight-(cScroll==>contextW);
+		size8=size*8;
+		@blit1 ptr size8;
+		ptr=cBitMpW==>contextW;
+		@write_reg 33 size;
+		size=ScrHeight*8-size;
+		size8=size*8;
+	}
+	@blit1 ptr size8;
+];
+
+[InitScreenRegs;
+@write_reg $ffff $0000; ! Setting ffff resets the screen and primes it for data
+@write_reg $0001 $0100;
+@write_reg $0002 $0700;
+@write_reg $0003 $1030;
+@write_reg $0008 $0302;
+@write_reg $0009 $0000;
+@write_reg $000A $0008;
+@write_reg $0010 $0790;
+@write_reg $0011 $0005;
+@write_reg $0012 $0000;
+@write_reg $0013 $0000;
+@write_reg $0010 $12B0;
+@write_reg $0011 $0007;
+@write_reg $0012 $008C;
+@write_reg $0013 $1700;
+@write_reg $0029 $0022;
+@write_reg $0030 $0000;
+@write_reg $0031 $0505;
+@write_reg $0032 $0205;
+@write_reg $0035 $0206;
+@write_reg $0036 $0408;
+@write_reg $0037 $0000;
+@write_reg $0038 $0504;
+@write_reg $0039 $0206;
+@write_reg $003C $0206;
+@write_reg $003D $0408;
+@write_reg $0050 $0000;
+@write_reg $0051 $00EF;
+@write_reg $0052 $0000;
+@write_reg $0053 $013F;
+@write_reg $0060 $A700;
+@write_reg $0061 $0001;
+@write_reg $0090 $0033;
+@write_reg $0081 $0000;
+@write_reg $0082 $0000;
+@write_reg $0083 $013F;
+@write_reg $0007 $0133;
+];
+
+[InitContext;
+cAbbrev==>contextW=$18-->0;
+cEncodO==>contextW=$FFFF; !1F700
+cEncodB==>contextW=$F701;
+cScrenX==>contextW=0;
+cScrenY==>contextW=0;
+cFontO ==>contextW=$FFFF; ! $1F200
+cFontB ==>contextW=$F201;
+cBitMpW==>contextW=-BufferHeight*LineStrideW;
+cScroll==>contextW=0;
+cTextO==>contextW=cBitMpW==>contextW;
+cTextB==>contextW=cBitMpW==>contextW-MaxTextSize;
+];
+
+[SysPrint
+printO printW;
+DecodeText(printO, printW);
+TextToConsole();
+rtrue;
+];
+
+[SysPrintChar
+char
+textO textB;
+textO=cTextO==>contextW;
+textB=cTextB==>contextW;
+textO->textB=char; textB++;
+textO->textB=0;
+TextToConsole();
+rtrue;
+];
+
+[SysPrintNum
+num
+digit writeStarted demon;
+if (num<0)
+{
+	SysPrintChar('-');
+	num=-num;
+}
+demon=10000;
+while (1)
+{
+	digit=num/demon;
+	if (digit>0 || writeStarted || demon==1)
+	{
+		SysPrintChar('0'+digit);
+		writeStarted=1;
+		if (demon==1)
+			break;
+	}
+	num=num-digit*demon;
+	demon=demon/10;	
+}
+rtrue;
+];
+
+[SysRead;
+UpdateScreen();
 quit;
+];
+
+[SysInit
+textO textB;
+InitContext();
+InitScreenRegs();
+textO=cTextO==>contextW;
+textB=cTextB==>contextW;
+textO->textB='Z'; textB++;
+textO->textB='B'; textB++;
+textO->textB='I'; textB++;
+textO->textB='O'; textB++;
+textO->textB='S'; textB++;
+textO->textB=' '; textB++;
+textO->textB='0'; textB++;
+textO->textB='.'; textB++;
+textO->textB='1'; textB++;
+textO->textB='\n'; textB++;
+textO->textB=0;
+TextToConsole();
+UpdateScreen();
 ];
