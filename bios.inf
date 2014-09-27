@@ -17,7 +17,7 @@ Constant cTextO		  = 20;
 Constant cTextB		  = 22;
 Constant MaxTextSize  = $400;
 
-Constant contextW     = $E800; ! $1F000
+Constant contextW     = $D800; ! $1B000
 
 ! Code should start at $1F800
 ! Font + Encoding data is directly before
@@ -25,6 +25,7 @@ Constant contextW     = $E800; ! $1F000
 
 ! BitMap buffer is at the top of the high RAM (18.75Kb)
 ! Scratch buffer is below the bitmap and is 1Kb
+! Context structure is just below that
 ! Bottom of high RAM are the stacks growing up
 
 [Main;
@@ -38,11 +39,10 @@ SysRead();
 
 [DecodeText
 inputO inputW !inputs
-outputO outputB abbrevTable encodingO encodingB alpha charWord c char charOut; !temps
+outputO outputB encodingO encodingB alpha charWord c char charOut; !temps
 
 outputO=cTextO==>contextW;
 outputB=cTextB==>contextW;
-abbrevTable=cAbbrev==>contextW;
 encodingO=cEncodO==>contextW;
 encodingB=cEncodB==>contextW;
 alpha=0;
@@ -85,7 +85,7 @@ do
 			else if (alpha<=5)
 			{
 				cTextB==>contextW=outputB;
-				DecodeText(abbrevTable-->(32*(alpha-3)+char), 0);
+				DecodeText(0, (cAbbrev==>contextW)-->(32*(alpha-3)+char));
 				outputB=cTextB==>contextW;
 				alpha=0;
 			}
@@ -114,7 +114,7 @@ cTextB==>contextW=outputB;
 ];
 
 [TextToConsole
-textO textB fontO fontB bitmapW char ptr i a b w x y;
+textO textB fontO fontB bitmapW char ptr a b w x y checkWrap firstLine;
 
 textO=cTextO==>contextW;
 textB=cTextB==>contextW;
@@ -124,11 +124,33 @@ fontO=cFontO==>contextW;
 fontB=cFontB==>contextW;
 bitmapW=cBitMpW==>contextW;
 char=textO=>textB;
+if (x~=0)
+	checkWrap=1;
+firstLine=1;
 while (char)
 {
+	if (char<=32)
+	{
+		checkWrap=1;
+	}
+	else if (checkWrap)
+	{
+		w=x;
+		ptr=textB;
+		while (textO=>ptr>32)
+		{
+			w=w+(fontO->(fontB+(textO=>ptr)*10));
+			ptr++;
+		}
+		if (w>ScrWidth)
+		{
+			x=ScrWidth+1;
+		}
+		checkWrap=0;
+	}
 	ptr=fontB+char*10;
 	w=fontO->ptr;
-	if (x+w>ScrWidth || char=='\n')
+	if (x+w>ScrWidth || char==10)
 	{
 		y=y+10;
 		if (y>BufferHeight)
@@ -142,22 +164,26 @@ while (char)
 			b--;
 		}
 		x=0;
+		firstLine=0;
 	}
-	a=7-(x&7);
-	b=2;
-	while (a)
+	if (x~=0 || char>32 || firstLine)
 	{
-		b=b*2;
-		a--;
+		a=7-(x&7);
+		b=2;
+		while (a)
+		{
+			b=b*2;
+			a--;
+		}
+		a=x/8+y*LineStride;
+		for (char=0: char<9: char++)
+		{
+			ptr++;
+			a==>bitmapW=(a==>bitmapW)|((fontO->ptr)*b);
+			a=a+LineStride;
+		}
+		x=x+w;
 	}
-	a=x/8+y*LineStride;
-	for (i=0: i<9: i++)
-	{
-		ptr++;
-		a==>bitmapW=(a==>bitmapW)|((fontO->ptr)*b);
-		a=a+LineStride;
-	}
-	x=x+w;
 	textB++;
 	char=textO=>textB;
 }
@@ -242,9 +268,17 @@ cTextB==>contextW=cBitMpW==>contextW-MaxTextSize;
 
 [SysPrint
 printO printW;
-DecodeText(printO, printW);
+DecodeText(printO&1, printW);
+if (printO&2) ! Doing print_ret so need to add a newline
+{
+	printO=cTextO==>contextW;
+	printW=cTextB==>contextW;
+	printO->printW=10;
+	printW++;
+	printO->printW=0;
+}
+cTextB==>contextW=(cBitMpW==>contextW-MaxTextSize); ! reset buffer as Decode modifies it
 TextToConsole();
-cTextB==>contextW=(cBitMpW==>contextW-MaxTextSize); ! reset buffer for next time
 rtrue;
 ];
 
@@ -290,23 +324,8 @@ UpdateScreen();
 quit;
 ];
 
-[SysInit
-textO textB;
+[SysInit;
 InitContext();
 InitScreenRegs();
-textO=cTextO==>contextW;
-textB=cTextB==>contextW;
-textO->textB='Z'; textB++;
-textO->textB='B'; textB++;
-textO->textB='I'; textB++;
-textO->textB='O'; textB++;
-textO->textB='S'; textB++;
-textO->textB=' '; textB++;
-textO->textB='0'; textB++;
-textO->textB='.'; textB++;
-textO->textB='1'; textB++;
-textO->textB='\n'; textB++;
-textO->textB=0;
-TextToConsole();
 UpdateScreen();
 ];

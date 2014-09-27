@@ -29,6 +29,13 @@ wire led2;
 //`define HARDWARE_PRINT
 //`define REAL_HARDWARE
 
+// The callback addresses must match those in the BIOS
+`define INIT_CALLBACK		'hfe7d
+`define PRINT_CALLBACK		'hfe15
+`define PRINTCHAR_CALLBACK	'hfe3b
+`define PRINTNUM_CALLBACK	'hfe50
+`define READ_CALLBACK		'hfe79
+
 `define OPER_LARGE 2'b00
 `define OPER_SMALL 2'b01
 `define OPER_VARI  2'b10
@@ -129,12 +136,6 @@ wire led2;
 `define PRINTEFFECT_FETCHAFTER	1
 `define PRINTEFFECT_RET1		2
 `define PRINTEFFECT_ABBREVRET	3
-
-`define INIT_CALLBACK		'hfe40
-`define PRINT_CALLBACK		'hfdeb
-`define PRINTCHAR_CALLBACK	'hfdfe
-`define PRINTNUM_CALLBACK	'hfe13
-`define READ_CALLBACK		'hfe3c
 
 reg forceStaticRead;
 reg forceDynamicRead;
@@ -639,6 +640,7 @@ endtask
 task PrintChar;
 	input [7:0] char;
 	begin
+		$display("Print char: %d\n", char);
 `ifdef HARDWARE_PRINT
 		printEnable<=1;
 		dataOut<=char;
@@ -839,7 +841,8 @@ begin
 				6: begin address<=0; phase<=phase+1; globalsAddress[7:0]<=data; end
 				7: begin dataOut<=data; writeEnable<=1; phase<=8; end
 				8: begin writeEnable<=0; address<=address+1; if (address[15:0]=='hffff) phase<=9; else phase<=7; end
-				9: begin
+				9: begin writeEnable<=1; dataOut<=0; address<=address+1; if (address[15:0]=='hffff) begin writeEnable<=0; phase<=10; end end
+				10: begin
 					address<=pc;
 					forceStaticRead<=0;
 					stackAddress<=64*1024;
@@ -888,7 +891,6 @@ begin
 			endcase
 		end
 		`STATE_READ_FUNCTION: begin
-			$display("Read function: %h %h %h %d %d %d\n", operand[1], operand[2], operand[3], operTypes[1], operTypes[2], operTypes[3]);
 			case (phase)
 				0: begin
 					if (data==0) begin
@@ -1139,7 +1141,6 @@ begin
 		`STATE_DIVIDE: begin
 			case (phase)
 				0: begin
-					$display("Div ops: %d %d\n", operand[0], operand[1]);
 					negate<=operand[0][15];
 					if (operand[0]<0)
 						operand[0]<=-operand[0];
@@ -1152,7 +1153,6 @@ begin
 					phase<=phase+1;
 				end
 				1: begin
-					$display("Div 1: %d %d %d %d\n", operand[0], operand[1], operand[2], operand[3]);
 					if (operand[1][15] || operand[0]<=operand[1]) begin
 						phase<=phase+1;
 					end else begin
@@ -1161,7 +1161,6 @@ begin
 					end
 				end
 				2: begin
-					$display("Div 2: %d %d %d %d\n", operand[0], operand[1], operand[2], operand[3]);
 					if (operand[1]>operand[0]) begin
 						if (operand[2]==1) begin
 							if (negate) begin
@@ -1182,7 +1181,6 @@ begin
 					end
 				end
 				3: begin
-					$display("Div result: %d %d\n", operand[0], operand[1]);
 					StoreResult(delayedBranch?operand[1]:operand[0]);
 				end
 			endcase
@@ -1241,7 +1239,7 @@ begin
 					pc<=address+2;
 				operand[0]<=`PRINT_CALLBACK; 
 				$display("Print from %h\n", temp);
-				operand[1]<=temp[0]; operand[2]<=temp[16:1];
+				operand[1]<=temp[0]|((returnValue[1:0]==`PRINTEFFECT_RET1)?2:0); operand[2]<=temp[16:1];
 				operTypes[1]=`OPER_LARGE; operTypes[2]=`OPER_LARGE; operTypes[3]=`OPER_OMIT;
 				CallFunction(returnValue[1:0]==`PRINTEFFECT_RET1);
 			end else begin
@@ -1279,7 +1277,7 @@ wire led0;
 wire led1;
 wire led2;
 
-integer file,readData,i;
+integer file,readData,i,j;
 reg [7:0] mem [128*1024:0];
 reg [7:0] dynamicMem [128*1024:0];
 
@@ -1294,7 +1292,7 @@ begin
 	$fclose(file);
 	b.divider=0;
 	//$monitor("%h %h %h State:%d(%d) Op:%h Num:%h OperType:%h%h%h%h OperIdx:%d Operand:%h %h Store:%h Branch:%h", clk, data, address, b.state, b.phase, b.op, b.operNum, b.operTypes[0], b.operTypes[1], b.operTypes[2], b.operTypes[3], b.operandIdx, b.operand[0], b.operand[1], b.store, b.branch);
-	for (i=0; i</*505*/1000000; i=i+1) begin
+	for (i=0; i</*505*/3000000; i=i+1) begin
 		clk=1;
 		#5 clk=0;
 		if (!ramCS && !writeEnable) begin
@@ -1305,7 +1303,24 @@ begin
 		end
 		if (b.state==`STATE_HALT) begin
 			file=$fopen("ram.dat", "wb");
-			$fwrite(dynamicMem, file);
+			for (i=0; i<'h1b500; i=i+16) begin
+				$fwrite(file, "%05h: ", i);
+				for (j=0; j<16; j=j+2)
+					$fwrite(file, "%02x%02x ", dynamicMem[i+j][7:0], dynamicMem[i+j+1][7:0]);
+				for (j=0; j<16; j=j+1)
+					$fwrite(file, "%c", (dynamicMem[i+j][7:0]>=32)?dynamicMem[i+j][7:0]:46);
+				$fwrite(file, "\n");
+			end
+			$fwrite(file, "\nBitmap:\n");
+			for (i='h1b500; i<'h20000; i=i+30) begin
+				for (j=0; j<30; j=j+1)
+					$fwrite(file, "%d%d%d%d%d%d%d%d",
+						dynamicMem[i+j][7], dynamicMem[i+j][6],
+						dynamicMem[i+j][5], dynamicMem[i+j][4],
+						dynamicMem[i+j][3], dynamicMem[i+j][2],
+						dynamicMem[i+j][1], dynamicMem[i+j][0]);
+				$fwrite(file, "\n");
+			end
 			$fclose(file);
 			$finish;
 		end
