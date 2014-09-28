@@ -36,13 +36,25 @@ wire lcdReset;
 
 //`define HARDWARE_PRINT
 //`define REAL_HARDWARE
+`define RELOCATABLE_CALLBACKS
 
+`ifdef RELOCATABLE_CALLBACKS
+// Useful for development but takes up too many gates on the FPGA
+`define CALLBACK_BASE		'h1F80B
+`define INIT_CALLBACK		callbacks[0]
+`define PRINT_CALLBACK		callbacks[1]
+`define PRINTCHAR_CALLBACK	callbacks[2]
+`define PRINTNUM_CALLBACK	callbacks[3]
+`define READ_CALLBACK		callbacks[4]
+reg [15:0] callbacks [4:0];
+`else
 // The callback addresses must match those in the BIOS
-`define INIT_CALLBACK		'hfe78
-`define PRINT_CALLBACK		'hfe10
-`define PRINTCHAR_CALLBACK	'hfe36
-`define PRINTNUM_CALLBACK	'hfe4b
-`define READ_CALLBACK		'hfe74
+`define INIT_CALLBACK		'hfe7e
+`define PRINT_CALLBACK		'hfe16
+`define PRINTCHAR_CALLBACK	'hfe3c
+`define PRINTNUM_CALLBACK	'hfe51
+`define READ_CALLBACK		'hfe7a
+`endif
 
 `define OPER_LARGE 2'b00
 `define OPER_SMALL 2'b01
@@ -192,14 +204,14 @@ reg [15:0] blitCol1;
 initial
 begin
 	state=`STATE_RESET;
-	forceDynamicRead<=0;
-	forceStaticRead<=0;
-	writeEnable<=0;
-	printEnable<=0;
-	phase<=0;
-	readHigh<=0;
-	divider<=0;
-	nextLoadIsDynamic<=0;
+	forceDynamicRead=0;
+	forceStaticRead=0;
+	writeEnable=0;
+	printEnable=0;
+	phase=0;
+	readHigh=0;
+	divider=0;
+	nextLoadIsDynamic=0;
 end
 
 assign data = (writeEnable || printEnable)?dataOut:8'bZ;
@@ -222,10 +234,11 @@ assign lcdReset = rlcdReset;
 
 task StoreB;
 	begin
-		case (phase)
-			0: begin nextLoadIsDynamic<=0; address<=operand[0]+operand[1]; writeEnable<=1; dataOut<=operand[2][7:0]; phase<=phase+1; end
-			1: begin address<=pc; writeEnable<=0; state<=`STATE_FETCH_OP; phase<=0; end
-		endcase
+		if (phase==0) begin
+			nextLoadIsDynamic<=0; address<=operand[0]+operand[1]; writeEnable<=1; dataOut<=operand[2][7:0]; phase<=phase+1;
+		end else begin
+			address<=pc; writeEnable<=0; state<=`STATE_FETCH_OP;
+		end
 	end
 endtask
 
@@ -234,7 +247,7 @@ task StoreW;
 		case (phase)
 			0: begin nextLoadIsDynamic<=0; address<=operand[0]+operand[1]*2; writeEnable<=1; dataOut<=operand[2][15:8]; phase<=phase+1; end
 			1: begin address<=address+1; dataOut<=operand[2][7:0]; phase<=phase+1; end
-			2: begin address<=pc; writeEnable<=0; state<=`STATE_FETCH_OP; phase<=0; end
+			default: begin address<=pc; writeEnable<=0; state<=`STATE_FETCH_OP; end
 		endcase
 	end
 endtask
@@ -340,10 +353,11 @@ endfunction
 
 task TestAttr;
 	begin
-		case (phase)
-			0: begin address<=GetObjectAddr(operand[0])+(operand[1]/8); phase<=phase+1; end
-			1: DoBranch(data[7-(operand[1]&7)]);
-		endcase
+		if (phase==0) begin
+			address<=GetObjectAddr(operand[0])+(operand[1]/8); phase<=phase+1;
+		end else begin
+			DoBranch(data[7-(operand[1]&7)]);
+		end
 	end
 endtask
 
@@ -352,7 +366,7 @@ task SetAttr;
 		case (phase)
 			0: begin address<=GetObjectAddr(operand[0])+(operand[1]/8); phase<=phase+1; end
 			1: begin dataOut<=data|(1<<(operand[1]&7)); writeEnable<=1; phase<=phase+1; end
-			2: begin writeEnable<=0; address<=pc; state=`STATE_FETCH_OP; end
+			default: begin writeEnable<=0; address<=pc; state=`STATE_FETCH_OP; end
 		endcase
 	end
 endtask
@@ -362,17 +376,18 @@ task ClearAttr;
 		case (phase)
 			0: begin address<=GetObjectAddr(operand[0])+(operand[1]/8); phase<=phase+1; end
 			1: begin dataOut<=data&(~(1<<(operand[1]&7))); writeEnable<=1; phase<=phase+1; end
-			2: begin writeEnable<=0; address<=pc; state=`STATE_FETCH_OP; end
+			default: begin writeEnable<=0; address<=pc; state=`STATE_FETCH_OP; end
 		endcase
 	end
 endtask
 
 task JumpIfParent;
 	begin
-		case (phase)
-			0: begin address<=GetObjectAddr(operand[0])+4; phase<=phase+1; end
-			1: DoBranch(operand[1]==data);
-		endcase
+		if (phase==0) begin
+			address<=GetObjectAddr(operand[0])+4; phase<=phase+1;
+		end else begin
+			DoBranch(operand[1]==data);
+		end
 	end
 endtask
 
@@ -380,10 +395,11 @@ task GetRelative;
 	input [1:0] offset;
 	input branch;
 	begin
-		case (phase)
-			0: begin address<=GetObjectAddr(operand[0])+4+offset; phase<=phase+1; end
-			1: StoreResultAndBranch(data, branch?data==0:negate);
-		endcase
+		if (phase==0) begin
+			address<=GetObjectAddr(operand[0])+4+offset; phase<=phase+1;
+		end else begin
+			StoreResultAndBranch(data, branch?data==0:negate);
+		end
 	end
 endtask
 
@@ -412,7 +428,7 @@ task FindProp;
 				end
 		   	end
 			5: begin temp[7:0]<=data; address<=temp+1; phase<=phase+1; end
-			6: begin StoreResult((temp[7:0]<<8)|data); end
+			default: begin StoreResult((temp[7:0]<<8)|data); end
 		endcase
 	end
 endtask
@@ -446,7 +462,7 @@ task SetProp;
 				end
 			end
 			5: begin dataOut<=operand[1][7:0]; address<=temp+1; phase<=phase+1; end
-			6: begin state<=`STATE_FETCH_OP; address<=pc; writeEnable<=0; end
+			default: begin state<=`STATE_FETCH_OP; address<=pc; writeEnable<=0; end
 		endcase
 	end
 endtask
@@ -459,7 +475,7 @@ task FindPropAddrLen;
 			1: begin temp[16]<=0; temp[15:8]<=data; temp[7:0]<=0; address<=address+1; phase<=phase+1; end
 			2: begin temp[7:0]<=data; address<=temp|data; phase<=phase+1; end
 			3: begin temp<=temp+2*data+1; address<=temp+2*data+1; phase<=phase+1; end
-			4: begin
+			default: begin
 				if (data==0) begin	// end of search
 					StoreResult(0);
 				end else if (data[4:0]==operand[1]) begin // found property
@@ -468,7 +484,7 @@ task FindPropAddrLen;
 					temp<=temp+data[7:5]+2;
 					address<=temp+data[7:5]+2;
 				end
-		   	end
+		   end
 		endcase
 	end
 endtask
@@ -480,7 +496,7 @@ task FindNextProp;
 			1: begin temp[16]<=0; temp[15:8]<=data; temp[7:0]<=0; address<=address+1; phase<=phase+1; end
 			2: begin temp[7:0]<=data; address<=temp|data; phase<=phase+1; end
 			3: begin temp<=temp+2*data+1; address<=temp+2*data+1; phase<=phase+1; end
-			4: begin
+			default: begin
 				if (operand[1]==0 || data[4:0]==operand[1])
 					StoreResult(data[4:0]);
 				else if (data==0) begin	// end of search
@@ -489,7 +505,7 @@ task FindNextProp;
 					temp<=temp+data[7:5]+2;
 					address<=temp+data[7:5]+2;
 				end
-		   	end
+		   end
 		endcase
 	end
 endtask
@@ -509,7 +525,7 @@ task Pull;
 				address<=address+1;
 				phase<=phase+1;
 			end
-			2: begin
+			default: begin
 				forceDynamicRead<=0;
 				if (return)
 					ReturnFunction((temp[7:0]<<8)|data);
@@ -564,7 +580,7 @@ task Load;
 				address<=address+1;
 				phase<=phase+1;
 			end
-			2: begin
+			default: begin
 				forceDynamicRead<=0;
 				StoreResult((operand[1][7:0]<<8)|data);
 			end
@@ -604,7 +620,7 @@ task RemoveObject;
 			7: begin temp[7:0]<=data; writeEnable<=1; dataOut<=operand[0]; phase<=phase+1; end
 			8: begin address<=GetObjectAddr(operand[0])+4; dataOut<=operand[1][7:0]; phase<=phase+1; end
 			9: begin address<=address+1; dataOut<=temp[7:0]; phase<=phase+1; end
-			10: begin
+			default: begin
 				writeEnable<=0;
 				state<=`STATE_FETCH_OP;
 				address<=pc;
@@ -619,7 +635,7 @@ task Random;
 			0: begin random<=random^(random<<13); phase<=phase+1; end
 			1: begin random<=random^(random>>9); phase<=phase+1; end
 			2: begin random<=random^(random<<7); phase<=phase+1; end
-			3: begin state<=`STATE_DIVIDE; delayedBranch<=1; operand[1]<=operand[0]+1; operand[0]<=random; phase<=0; end
+			default: begin state<=`STATE_DIVIDE; delayedBranch<=1; operand[1]<=operand[0]+1; operand[0]<=random; phase<=0; end
 		endcase
 	end
 endtask
@@ -645,13 +661,12 @@ task PrintNum;
 					phase<=operand[2][2:0];
 				end
 			end
-			6: begin printEnable<=0; state<=`STATE_FETCH_OP; end
+			default: begin printEnable<=0; state<=`STATE_FETCH_OP; end
 		endcase
 `else
 		operand[0]<=`PRINTNUM_CALLBACK;
 		operand[1]<=operand[0];
 		operTypes[1]<=`OPER_LARGE;
-		operTypes[2]<=`OPER_OMIT;
 		CallFunction(0);
 `endif
 	end
@@ -669,7 +684,6 @@ task PrintChar;
 		operand[0]<=`PRINTCHAR_CALLBACK;
 		operand[1]<=char;
 		operTypes[1]<=`OPER_LARGE;
-		operTypes[2]<=`OPER_OMIT;
 		CallFunction(0);
 `endif
 	end
@@ -678,7 +692,8 @@ endtask
 task SRead;
 	begin
 		operand[0]<=`READ_CALLBACK;
-		operTypes[1]<=`OPER_OMIT;
+		operand[2]<=operand[0]; // Am swapping arguments just to save space on FPGA
+		operTypes[2]<=`OPER_LARGE;
 		CallFunction(0);
 	end
 endtask
@@ -686,13 +701,20 @@ endtask
 task WriteReg;
 	begin
 		case (phase)
-			0: begin rlcdRS<=0; phase<=phase+1; end 
+			0: begin 
+				if (operand[0]=='hffff) begin
+					blitCol1<=operand[1];
+					blitCol0<=blitCol1;
+					state<=`STATE_FETCH_OP;
+				end
+				rlcdRS<=0; phase<=phase+1;
+			end 
 			1: begin dataOut<=operand[0][15:8]; printEnable<=1; phase<=phase+1; end
 			2: begin dataOut<=operand[0][7:0]; if (operand[0]==0) phase<=4; else phase<=phase+1; end
 			3: begin rlcdRS<=1; printEnable<=0; phase<=phase+1; end
 			4: begin dataOut<=operand[1][15:8]; printEnable<=1; phase<=phase+1; end
 			5: begin dataOut<=operand[1][7:0]; phase<=phase+1; end
-			6: begin printEnable<=0; address<=pc; state=`STATE_FETCH_OP; end
+			default: begin printEnable<=0; address<=pc; state<=`STATE_FETCH_OP; end
 		endcase
 	end
 endtask
@@ -724,13 +746,12 @@ task Blit1;
 				printEnable<=1;
 				phase<=phase+1;
 			end
-			6: begin
+			default: begin
 				dataOut<=store[7]?blitCol1[7:0]:blitCol0[7:0];
 				store[7:1]=store[6:0];
 				returnValue<=returnValue+1;
 				if (returnValue[2:0]==7) begin
-					if (returnValue[3:0]==15)
-						operand[1]=operand[1]-1;
+					operand[1]=operand[1]-1;
 					phase<=3;
 					address<=address+1;
 				end else begin
@@ -820,7 +841,7 @@ task DoOp;
 					default: state<=`STATE_HALT;
 				endcase
 			end
-			`OP_VAR: begin
+			default: begin // 'OP_VAR
 				if (phase==0)
 					$display("Doing opvar:%d Operands:%h %h %h %h Store:%h Branch:%h/%d/%h", op, operand[0], operand[1], operand[2], operand[3], store, branch, negate, $signed(pc)+$signed(branch-2));
 				case (op)
@@ -921,7 +942,14 @@ begin
 				8: begin writeEnable<=0; address<=address+1; if (address[15:0]=='hffff) phase<=9; else phase<=7; end
 				9: begin writeEnable<=1; dataOut<=0; address<=address+1; if (address[15:0]=='hffff) begin writeEnable<=0; phase<=10; end end
 				10: begin blitCol0<='hffff; blitCol1<=0; rlcdReset<=address[10]; rlcdRS<=1; printEnable<=0; address<=address+1; if (address[10:0]=='h7ff) phase<=11; end
-				11: begin
+
+`ifdef RELOCATABLE_CALLBACKS
+				11: begin address<=`CALLBACK_BASE; store<=0; phase<=phase+1; end
+				12: begin callbacks[store][15:8]<=data; address<=address+1; phase<=phase+1; end
+				13: begin callbacks[store][7:0]<=data; address<=address+4; store<=store+1; if (store==4) phase<=14; else phase<=12; end
+`endif
+
+				default: begin
 					address<=pc;
 					forceStaticRead<=0;
 					stackAddress<=64*1024;
@@ -941,7 +969,7 @@ begin
 				4: begin address<=address+1; dataOut<=stackAddress[15:8]; phase<=phase+1; end
 				5: begin address<=address+1; dataOut<=stackAddress[7:0]; phase<=phase+1; end
 				6: begin address<=address+1; dataOut<=store; phase<=phase+1; end
-				7: begin
+				default: begin
 					csStack<=csStack+37;
 					pc<=2*operand[0];
 					address<=2*operand[0];
@@ -960,7 +988,7 @@ begin
 				4: begin stackAddress[16]=data[0]; address<=address+1; phase<=phase+1; end
 				5: begin stackAddress[15:8]=data; address<=address+1; phase<=phase+1; end
 				6: begin stackAddress[7:0]=data; address<=address+1; phase<=phase+1; end
-				7: begin
+				default: begin
 					forceDynamicRead<=0;
 					if (negate)
 						phase<=0;
@@ -999,7 +1027,7 @@ begin
 					end
 					opsToRead<=opsToRead-1;
 				end
-				2: begin
+				default: begin
 					if (operTypes[(currentLocal>>1)+1]==`OPER_OMIT) begin
 						state<=`STATE_FETCH_OP;
 						writeEnable<=0;
@@ -1210,7 +1238,7 @@ begin
 					writeEnable<=1;
 					phase<=phase+1;
 				end
-				2: begin
+				default: begin
 					DoBranch(delayedBranch);
 					writeEnable<=0;
 					phase<=0;
@@ -1259,7 +1287,7 @@ begin
 						operand[3]<=operand[3]+operand[2];
 					end
 				end
-				3: begin
+				default: begin
 					StoreResult(delayedBranch?operand[1]:operand[0]);
 				end
 			endcase
@@ -1310,7 +1338,7 @@ begin
 				7: begin address<=address+1; operand[2][7:0]=data; phase<=phase+1; end
 				8: begin address<=(operand[2][7:0]<<8)|data+2*store; phase<=phase+1; end
 				9: begin address<=address+1; operand[2][7:0]<=data; phase<=phase+1; end
-				10: begin address<=2*((operand[2][7:0]<<8)|data); phase<=0; end
+				default: begin address<=2*((operand[2][7:0]<<8)|data); phase<=0; end
 			endcase
 `else
 			if (data[7] || returnValue[1:0]!=`PRINTEFFECT_FETCHAFTER) begin
@@ -1319,7 +1347,7 @@ begin
 				operand[0]<=`PRINT_CALLBACK; 
 				$display("Print from %h\n", temp);
 				operand[1]<=temp[0]|((returnValue[1:0]==`PRINTEFFECT_RET1)?2:0); operand[2]<=temp[16:1];
-				operTypes[1]=`OPER_LARGE; operTypes[2]=`OPER_LARGE; operTypes[3]=`OPER_OMIT;
+				operTypes[1]=`OPER_LARGE; operTypes[2]=`OPER_LARGE;
 				CallFunction(returnValue[1:0]==`PRINTEFFECT_RET1);
 			end else begin
 				address<=address+2;
@@ -1333,7 +1361,7 @@ begin
 			state<=`STATE_FETCH_OP;
 		end
 `endif
-		`STATE_HALT: begin
+		default: begin
 			$display("HALT");
 		end
 	endcase
@@ -1374,7 +1402,6 @@ begin
 	readData=$fread(mem, file);
 	$display("File read:%h %d", file, readData);
 	$fclose(file);
-	b.divider=0;
 	//$monitor("%h %h %h State:%d(%d) Op:%h Num:%h OperType:%h%h%h%h OperIdx:%d Operand:%h %h Store:%h Branch:%h", clk, data, address, b.state, b.phase, b.op, b.operNum, b.operTypes[0], b.operTypes[1], b.operTypes[2], b.operTypes[3], b.operandIdx, b.operand[0], b.operand[1], b.store, b.branch);
 	for (i=0; i</*505*/3000000; i=i+1) begin
 		clk=1;

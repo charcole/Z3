@@ -71,7 +71,9 @@
 
 4353 (94%)		- Print/PrintChar/PrintNum BIOS
 4522 (98%)		- Blit and writeReg ops
-4533 (98%)      - + Added extra output pins (need correct assignment)
+4533 (98%)      - + Added extra output pins (Tested and works!)
+4408 (96%)		- Added default cases
+4475 (97%)		- + Blit colour setting
 
 Moya
 Ellie/Ally

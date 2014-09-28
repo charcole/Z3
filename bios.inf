@@ -193,21 +193,21 @@ cScrenY==>contextW=y;
 
 [UpdateScreen
 ptr size sizeW; !temps
-	!@write_reg $fffe 0; ! Setting fffe sets colour 0
-	!@write_reg $fffd 255; ! Setting fffd sets colour 1
+	@write_reg $ffff $0000;	! Set colour 0
+	@write_reg $ffff $07C0; ! Set colour 1
 	@write_reg 32 0;
 	@write_reg 33 0;
 	ptr=(cBitMpW==>contextW)+(LineStrideW*(cScroll==>contextW));
-	sizeW=LineStrideW*ScrHeight;
+	sizeW=LineStride*ScrHeight;
 	if ((cScroll==>contextW) + ScrHeight > BufferHeight)
 	{
 		size=BufferHeight-(cScroll==>contextW);
-		sizeW=LineStrideW*size;
+		sizeW=LineStride*size;
 		@blit1 ptr sizeW;
 		ptr=cBitMpW==>contextW;
 		@write_reg 32 0;
 		@write_reg 33 size;
-		sizeW=LineStrideW*(ScrHeight-size);
+		sizeW=LineStride*(ScrHeight-size);
 	}
 	@blit1 ptr sizeW;
 ];
