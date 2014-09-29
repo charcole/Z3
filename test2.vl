@@ -49,11 +49,11 @@ wire lcdReset;
 reg [15:0] callbacks [4:0];
 `else
 // The callback addresses must match those in the BIOS
-`define INIT_CALLBACK		'hfe7e
-`define PRINT_CALLBACK		'hfe16
-`define PRINTCHAR_CALLBACK	'hfe3c
-`define PRINTNUM_CALLBACK	'hfe51
-`define READ_CALLBACK		'hfe7a
+`define INIT_CALLBACK		'hff7c
+`define PRINT_CALLBACK		'hfe1d
+`define PRINTCHAR_CALLBACK	'hfe43
+`define PRINTNUM_CALLBACK	'hfe58
+`define READ_CALLBACK		'hfe81
 `endif
 
 `define OPER_LARGE 2'b00

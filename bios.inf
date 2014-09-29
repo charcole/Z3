@@ -3,6 +3,10 @@ Constant ScrHeight    = 320;
 Constant BufferHeight = 640;
 Constant LineStride   = 30;
 Constant LineStrideW  = 15;
+Constant TextHeight   = 10;
+Constant KeyboardStartLine		= 241;
+Constant KeyboardTextSpacing	= 20;
+Constant KeyboardSepSpacing		= 5;
 
 Constant cAbbrev      = 0;
 Constant cEncodO      = 2;
@@ -15,6 +19,7 @@ Constant cBitMpW	  = 16;
 Constant cScroll	  = 18;
 Constant cTextO		  = 20;
 Constant cTextB		  = 22;
+Constant cTextSep	  = 24;
 Constant MaxTextSize  = $400;
 
 Constant contextW     = $D800; ! $1B000
@@ -139,7 +144,7 @@ while (char)
 		ptr=textB;
 		while (textO=>ptr>32)
 		{
-			w=w+(fontO->(fontB+(textO=>ptr)*10));
+			w=w+(fontO->(fontB+(textO=>ptr)*TextHeight));
 			ptr++;
 		}
 		if (w>ScrWidth)
@@ -148,11 +153,11 @@ while (char)
 		}
 		checkWrap=0;
 	}
-	ptr=fontB+char*10;
+	ptr=fontB+char*TextHeight;
 	w=fontO->ptr;
 	if (x+w>ScrWidth || char==10)
 	{
-		y=y+10;
+		y=y+TextHeight;
 		if (y>BufferHeight)
 			y=0;
 		a=y*LineStride;
@@ -168,19 +173,22 @@ while (char)
 	}
 	if (x~=0 || char>32 || firstLine)
 	{
-		a=7-(x&7);
-		b=2;
-		while (a)
+		if (cTextSep==>contextW==0 || char==124)
 		{
-			b=b*2;
-			a--;
-		}
-		a=x/8+y*LineStride;
-		for (char=0: char<9: char++)
-		{
-			ptr++;
-			a==>bitmapW=(a==>bitmapW)|((fontO->ptr)*b);
-			a=a+LineStride;
+			a=7-(x&7);
+			b=2;
+			while (a)
+			{
+				b=b*2;
+				a--;
+			}
+			a=x/8+y*LineStride;
+			for (char=0: char<9: char++)
+			{
+				ptr++;
+				a==>bitmapW=(a==>bitmapW)|((fontO->ptr)*b);
+				a=a+LineStride;
+			}
 		}
 		x=x+w;
 	}
@@ -193,13 +201,13 @@ cScrenY==>contextW=y;
 
 [UpdateScreen
 ptr size sizeW; !temps
-	@write_reg $ffff $0000;	! Set colour 0
-	@write_reg $ffff $07C0; ! Set colour 1
+	@write_reg $ffff $ff14;	! Set colour 0
+	@write_reg $ffff $49c2; ! Set colour 1
 	@write_reg 32 0;
 	@write_reg 33 0;
 	ptr=(cBitMpW==>contextW)+(LineStrideW*(cScroll==>contextW));
-	sizeW=LineStride*ScrHeight;
-	if ((cScroll==>contextW) + ScrHeight > BufferHeight)
+	sizeW=LineStride*KeyboardStartLine;
+	if ((cScroll==>contextW) + KeyboardStartLine > BufferHeight)
 	{
 		size=BufferHeight-(cScroll==>contextW);
 		sizeW=LineStride*size;
@@ -207,7 +215,7 @@ ptr size sizeW; !temps
 		ptr=cBitMpW==>contextW;
 		@write_reg 32 0;
 		@write_reg 33 size;
-		sizeW=LineStride*(ScrHeight-size);
+		sizeW=LineStride*(KeyboardStartLine-size);
 	}
 	@blit1 ptr sizeW;
 ];
@@ -249,7 +257,6 @@ ptr size sizeW; !temps
 @write_reg $0081 $0000;
 @write_reg $0082 $0000;
 @write_reg $0083 $013F;
-@write_reg $0007 $0133;
 ];
 
 [InitContext;
@@ -264,6 +271,7 @@ cBitMpW==>contextW=-BufferHeight*LineStrideW;
 cScroll==>contextW=0;
 cTextO==>contextW=cBitMpW==>contextW;
 cTextB==>contextW=cBitMpW==>contextW-MaxTextSize;
+cTextSep==>contextW=0;
 ];
 
 [SysPrint
@@ -321,10 +329,75 @@ rtrue;
 
 [SysRead;
 UpdateScreen();
+@write_reg $0007 $0133; ! Turn on the screen
 quit;
+];
+
+[DrawKeyboard
+size ptr line i shifted;
+! Use print system to make keyboard bitmaps then blit to screen
+for (i=0: i<2; i++)
+{
+	cTextSep==>contextW=i;
+!	if (shifted)
+!	{
+!		@print "   Q   |  W   |  E   |  R   |   T   |  Y   |  U   |   I   |  O   |  P^";
+!		@print "        A  |   S   |  D   |  F   |  G   |  H   |   J   |  K   |   L^";
+!		@print "            Z  |   X   |  C   |  V   |  B   |  N   |  M   |   ,^";
+!	}
+!	else
+!	{
+		@print "    q  |   w  |   e   |  r   |   t   |   y  |   u   |   i   |  o   |   p^";
+		@print "        a  |   s   |  d   |   f   |   g  |   h   |  j   |   k   |   l^";
+		@print "            z  |   x   |  c   |   v  |   b   |  n   |  m   |   ,^";
+!	}
+	@print "          Shift          |        Space         |         Enter^";
+}
+cTextSep==>contextW=0;
+@write_reg $ffff $22b0;
+@write_reg $ffff $d75f;
+@write_reg 32 0;
+size=LineStride*TextHeight;
+ptr=cBitMpW==>contextW;
+line=KeyboardStartLine+KeyboardSepSpacing;
+for (i=0: i<4: i=i+1)
+{
+	@write_reg 33 line;
+	@blit1 ptr size;
+	ptr=ptr+TextHeight*LineStrideW;
+	line=line+KeyboardTextSpacing;
+}
+size=LineStride*KeyboardSepSpacing;
+line=KeyboardStartLine;
+for (i=0: i<4: i=i+1)
+{
+	@write_reg 33 line;
+	@blit1 ptr size;
+	line=line+TextHeight+KeyboardSepSpacing-1;
+	@write_reg 33 line;
+	@blit1 ptr size;
+	line=line+KeyboardSepSpacing+1;
+	ptr=ptr+TextHeight*LineStrideW;
+}
+@write_reg $ffff $d75f;
+line=KeyboardStartLine-1;
+size=LineStride;
+for (i=0: i<4: i=i+1)
+{
+	@write_reg 33 line;
+	@blit1 ptr size;
+	line=line+TextHeight+2*KeyboardSepSpacing;
+}
+ptr=cBitMpW==>contextW;
+for (i=0: i<LineStride*TextHeight*8: i=i+2)
+{
+	i==>ptr=0;
+}
+cScrenY==>contextW=0;
 ];
 
 [SysInit;
 InitContext();
 InitScreenRegs();
+DrawKeyboard();
 ];
