@@ -8,6 +8,8 @@ Constant KeyboardStartLine		= 241;
 Constant KeyboardTextSpacing	= 20;
 Constant KeyboardSepSpacing		= 5;
 
+Constant DictionaryOff = 8;
+
 Constant cAbbrev      = 0;
 Constant cEncodO      = 2;
 Constant cEncodB      = 4;
@@ -24,9 +26,9 @@ Constant MaxTextSize  = $400;
 
 Constant contextW     = $D800; ! $1B000
 
-! Code should start at $1F800
+! Code should start at $1E580
 ! Font + Encoding data is directly before
-! Game must be smaller than $1F200 (124.75Kb) to fit in BIOS
+! Game must be smaller than $1E000 (120Kb) to fit in BIOS
 
 ! BitMap buffer is at the top of the high RAM (18.75Kb)
 ! Scratch buffer is below the bitmap and is 1Kb
@@ -119,10 +121,9 @@ cTextB==>contextW=outputB;
 ];
 
 [TextToConsole
-textO textB fontO fontB bitmapW char ptr a b w x y checkWrap firstLine;
+textO textB
+fontO fontB bitmapW char ptr a b w x y checkWrap firstLine;
 
-textO=cTextO==>contextW;
-textB=cTextB==>contextW;
 x=cScrenX==>contextW;
 y=cScrenY==>contextW;
 fontO=cFontO==>contextW;
@@ -261,12 +262,12 @@ ptr size sizeW; !temps
 
 [InitContext;
 cAbbrev==>contextW=$18-->0;
-cEncodO==>contextW=$FFFF; !1F700
-cEncodB==>contextW=$F701;
+cEncodO==>contextW=$FFFF; !1E500
+cEncodB==>contextW=$E501;
 cScrenX==>contextW=0;
 cScrenY==>contextW=0;
-cFontO ==>contextW=$FFFF; ! $1F200
-cFontB ==>contextW=$F201;
+cFontO ==>contextW=$FFFF; ! $1E000
+cFontB ==>contextW=$E001;
 cBitMpW==>contextW=-BufferHeight*LineStrideW;
 cScroll==>contextW=0;
 cTextO==>contextW=cBitMpW==>contextW;
@@ -286,7 +287,7 @@ if (printO&2) ! Doing print_ret so need to add a newline
 	printO->printW=0;
 }
 cTextB==>contextW=(cBitMpW==>contextW-MaxTextSize); ! reset buffer as Decode modifies it
-TextToConsole();
+TextToConsole(cTextO==>contextW, cTextB==>contextW);
 rtrue;
 ];
 
@@ -298,27 +299,29 @@ textB=cTextB==>contextW;
 textO=>textB=char;
 textB++;
 textO=>textB=0;
-TextToConsole();
+TextToConsole(textO, textB-1);
 rtrue;
 ];
 
 [SysPrintNum
 num
 digit writeStarted demon;
+demon=10000;
 if (num<0)
 {
 	SysPrintChar('-');
-	num=-num;
+	demon=-demon;
 }
-demon=10000;
 while (1)
 {
 	digit=num/demon;
-	if (digit>0 || writeStarted || demon==1)
+	if (digit<0) ! Not sure why I need to do this but fixes -32678
+		digit=-digit;
+	if (digit>0 || writeStarted || demon==1 || demon==-1)
 	{
 		SysPrintChar('0'+digit);
 		writeStarted=1;
-		if (demon==1)
+		if (demon==1 || demon==-1)
 			break;
 	}
 	num=num-digit*demon;
@@ -327,30 +330,24 @@ while (1)
 rtrue;
 ];
 
-[SysRead;
-UpdateScreen();
-@write_reg $0007 $0133; ! Turn on the screen
-quit;
-];
-
 [DrawKeyboard
 size ptr line i shifted;
 ! Use print system to make keyboard bitmaps then blit to screen
 for (i=0: i<2; i++)
 {
 	cTextSep==>contextW=i;
-!	if (shifted)
-!	{
-!		@print "   Q   |  W   |  E   |  R   |   T   |  Y   |  U   |   I   |  O   |  P^";
-!		@print "        A  |   S   |  D   |  F   |  G   |  H   |   J   |  K   |   L^";
-!		@print "            Z  |   X   |  C   |  V   |  B   |  N   |  M   |   ,^";
-!	}
-!	else
-!	{
+	if (shifted)
+	{
+		@print "   Q   |  W   |  E   |  R   |   T   |  Y   |  U   |   I   |  O   |  P^";
+		@print "        A  |   S   |  D   |  F   |  G   |  H   |   J   |  K   |   L^";
+		@print "            Z  |   X   |  C   |  V   |  B   |  N   |  M   |   ,^";
+	}
+	else
+	{
 		@print "    q  |   w  |   e   |  r   |   t   |   y  |   u   |   i   |  o   |   p^";
 		@print "        a  |   s   |  d   |   f   |   g  |   h   |  j   |   k   |   l^";
 		@print "            z  |   x   |  c   |   v  |   b   |  n   |  m   |   ,^";
-!	}
+	}
 	@print "          Shift          |        Space         |         Enter^";
 }
 cTextSep==>contextW=0;
@@ -401,3 +398,185 @@ InitContext();
 InitScreenRegs();
 DrawKeyboard();
 ];
+
+[FindInDictionary
+text parse
+encodingO encodingB textO textB count limit i a c;
+
+encodingO=cEncodO==>contextW;
+textO=cTextO==>contextW;
+textB=cTextB==>contextW;
+limit=textB+6;
+
+i=6;
+while (i)
+{
+	i--;
+	textO=>(textB+i)=5;
+}
+
+count=parse->2;
+text=text+parse->3;
+
+while (count && textB<limit)
+{
+	c=text->0;
+	text++;
+	count--;
+	if (c==32)
+	{
+		textO=>textB=0;
+		textB++;
+	}
+	else
+	{
+		i=0;
+		a=3;
+		encodingB=cEncodB==>contextW;
+		while (c~=encodingO->encodingB)
+		{
+			encodingB++;
+			i++;
+			if (i==26)
+			{
+				if (a==5)
+					break;
+				a++;
+				i=0;
+			}
+		}
+		if (a>3)
+		{
+			textO=>textB=a;
+			textB++;
+		}
+		if (i==26)
+		{
+			textO=>textB=6;
+			textB++;
+			textO=>textB=(c/32)&$1F;
+			textB++;
+			textO=>textB=c&$1F;
+			textB++;
+		}
+		else
+		{
+			textO=>textB=6+i;
+			textB++;
+		}
+	}
+}
+
+textB=cTextB==>contextW;
+a=textO=>(textB  )*1024+textO=>(textB+1)*32+textO=>(textB+2);
+c=textO=>(textB+3)*1024+textO=>(textB+4)*32+textO=>(textB+5);
+c=c|$8000;
+
+i=DictionaryOff-->0;
+parse-->0=0;
+i=i+i->0+1;
+limit=i->0;
+i++;
+count=i-->0;
+i=i+2;
+while (count)
+{
+	if (i-->0==a && i-->1==c)
+	{
+		parse-->0=i;
+		break;
+	}
+	i=i+limit;
+	count--;
+}
+];
+
+[SysRead
+parse text
+count i c sep dict readingWord parse0;
+
+if (26==>contextW==0)
+{
+	text->0=9;
+	text->1=109;
+	text->2=111;
+	text->3=112;
+	text->4=32;
+	text->5=102;
+	text->6=108;
+	text->7=111;
+	text->8=111;
+	text->9=114;
+	text->10=0;
+}
+else
+{
+	text->0=1;
+	text->1=105;
+	text->2=0;
+}
+TextToConsole(text, 1);
+SysPrintChar(10);
+
+parse0=parse;
+parse++;
+parse++;
+
+parse0->1=0;
+count=text->0;
+i=1;
+while (count)
+{
+	c=text->i;
+	if (c==32)
+	{
+		sep=-1;
+	}
+	else
+	{
+		dict=DictionaryOff-->0;
+		sep=dict->0;
+		while (sep)
+		{
+			if (c==dict->sep)
+				break;
+			sep--;
+		}
+	}
+	if (readingWord)
+	{
+		if (sep)
+		{
+			parse0->1=parse0->1+1;
+			parse->2=i-parse->3;
+			FindInDictionary(text, parse);
+			parse=parse+4;
+			readingWord=0;
+			if (sep>0)
+			{
+				parse->3=i;
+				readingWord=1;
+			}
+		}
+	}
+	else if (sep>=0)
+	{
+		parse->3=i;
+		readingWord=1;
+	}
+	count--;
+	i++;
+}
+if (readingWord)
+{
+	parse0->1=parse0->1+1;
+	parse->2=i-parse->3;
+	FindInDictionary(text, parse);
+}
+UpdateScreen();
+@write_reg $0007 $0133; ! Turn on the screen
+if (26==>contextW==2)
+	quit;
+26==>contextW=26==>contextW+1;
+];
+
