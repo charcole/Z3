@@ -75,6 +75,8 @@
 4408 (96%)		- Added default cases
 4475 (97%)		- + Blit colour setting
 
+4463 (97%)		- Passes Czech and Planetfall test
+
 Moya
 Ellie/Ally
 Laura
