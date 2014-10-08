@@ -76,6 +76,15 @@
 4475 (97%)		- + Blit colour setting
 
 4463 (97%)		- Passes Czech and Planetfall test
+4401 (96%)		- Blit as arguments
+4406 (96%)		- New relocatable BIOS
+
+Todo:
+- Reset button (hardware)
+- Text input method (Touchscreen or PS/2) (software+hardware)
+- Implement Scrolling (software)
+- Status line (software)
+- Screen simulator for quicker development (external software)
 
 Moya
 Ellie/Ally

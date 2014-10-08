@@ -36,25 +36,13 @@ wire lcdReset;
 
 //`define HARDWARE_PRINT
 //`define REAL_HARDWARE
-`define RELOCATABLE_CALLBACKS
 
-`ifdef RELOCATABLE_CALLBACKS
-// Useful for development but takes up too many gates on the FPGA
 `define CALLBACK_BASE		'h1E58B
-`define INIT_CALLBACK		callbacks[0]
-`define PRINT_CALLBACK		callbacks[1]
-`define PRINTCHAR_CALLBACK	callbacks[2]
-`define PRINTNUM_CALLBACK	callbacks[3]
-`define READ_CALLBACK		callbacks[4]
-reg [15:0] callbacks [4:0];
-`else
-// The callback addresses must match those in the BIOS
-`define INIT_CALLBACK		'hf6af
-`define PRINT_CALLBACK		'hf4d6
-`define PRINTCHAR_CALLBACK	'hf504
-`define PRINTNUM_CALLBACK	'hf51c
-`define READ_CALLBACK		'hf77f
-`endif
+`define INIT_CALLBACK		'h0
+`define PRINT_CALLBACK		'h1
+`define PRINTCHAR_CALLBACK	'h2
+`define PRINTNUM_CALLBACK	'h3
+`define READ_CALLBACK		'h4
 
 `define OPER_LARGE 2'b00
 `define OPER_SMALL 2'b01
@@ -139,7 +127,6 @@ reg [15:0] callbacks [4:0];
 `define OP2_MUL		'h16
 `define OP2_DIV		'h17
 `define OP2_MOD		'h18
-`define OP2_BLIT1	'h1D
 `define OP2_WRITEREG 'h1E
 
 `define OPVAR_CALL   'h0
@@ -152,6 +139,7 @@ reg [15:0] callbacks [4:0];
 `define OPVAR_RANDOM 'h7
 `define OPVAR_PUSH 'h8
 `define OPVAR_PULL 'h9
+`define OPVAR_BLIT1	'h1F
 
 `define PRINTEFFECT_FETCH		0
 `define PRINTEFFECT_FETCHAFTER	1
@@ -197,10 +185,7 @@ reg [1:0] alphabet;
 reg [1:0] long;
 reg nextLoadIsDynamic;
 
-reg [4:0] divider;
-
-reg [15:0] blitCol0;
-reg [15:0] blitCol1;
+reg [2:0] divider;
 
 initial
 begin
@@ -221,7 +206,7 @@ assign ramCS = !(!printEnable && (writeEnable || forceDynamicRead || (!forceStat
 assign pe = !printEnable 
 `ifndef HARDWARE_PRINT
 `ifdef REAL_HARDWARE // Strobe over first part of cycle
-	|| divider[4] || divider==0
+	|| divider[2] || divider==0
 `endif
 `endif
 ;
@@ -675,14 +660,7 @@ endtask
 task WriteReg;
 	begin
 		case (phase)
-			0: begin 
-				if (operand[0]=='hffff) begin
-					blitCol1<=operand[1];
-					blitCol0<=blitCol1;
-					state<=`STATE_FETCH_OP;
-				end
-				rlcdRS<=0; phase<=phase+1;
-			end 
+			0: begin rlcdRS<=0; phase<=phase+1; end 
 			1: begin dataOut<=operand[0][15:8]; printEnable<=1; phase<=phase+1; end
 			2: begin dataOut<=operand[0][7:0]; if (operand[0]==0) phase<=4; else phase<=phase+1; end
 			3: begin rlcdRS<=1; printEnable<=0; phase<=phase+1; end
@@ -711,17 +689,17 @@ task Blit1;
 			end
 			4: begin
 				store<=data;
-				dataOut<=data[7]?blitCol1[15:8]:blitCol0[15:8];
+				dataOut<=data[7]?operand[3][15:8]:operand[2][15:8];
 				printEnable<=1;
 				phase<=6;
 			end
 			5: begin
-				dataOut<=store[7]?blitCol1[15:8]:blitCol0[15:8];
+				dataOut<=store[7]?operand[3][15:8]:operand[2][15:8];
 				printEnable<=1;
 				phase<=phase+1;
 			end
 			default: begin
-				dataOut<=store[7]?blitCol1[7:0]:blitCol0[7:0];
+				dataOut<=store[7]?operand[3][7:0]:operand[2][7:0];
 				store[7:1]=store[6:0];
 				returnValue<=returnValue+1;
 				if (returnValue[2:0]==7) begin
@@ -810,7 +788,6 @@ task DoOp;
 					`OP2_MUL: StoreResult($signed(operand[0])*$signed(operand[1]));
 					`OP2_DIV: begin state=`STATE_DIVIDE; delayedBranch<=0; end
 					`OP2_MOD: begin state=`STATE_DIVIDE; delayedBranch<=1; end
-					`OP2_BLIT1: Blit1();
 					`OP2_WRITEREG: WriteReg();
 					default: state<=`STATE_HALT;
 				endcase
@@ -839,6 +816,7 @@ task DoOp;
 					`OPVAR_RANDOM: Random();
 					`OPVAR_PUSH: StoreRegisterAndBranch(0, operand[0], negate);
 					`OPVAR_PULL: Pull(0);
+					`OPVAR_BLIT1: Blit1();
 					default: state<=`STATE_HALT;
 				endcase
 			end
@@ -925,14 +903,7 @@ begin
 				7: begin dataOut<=data; writeEnable<=1; phase<=8; end
 				8: begin writeEnable<=0; address<=address+1; if (address[15:0]=='hffff) phase<=9; else phase<=7; end
 				9: begin writeEnable<=1; dataOut<=0; address<=address+1; if (address[15:0]=='hffff) begin writeEnable<=0; phase<=10; end end
-				10: begin blitCol0<='hffff; blitCol1<=0; rlcdReset<=address[10]; rlcdRS<=1; printEnable<=0; address<=address+1; if (address[10:0]=='h7ff) phase<=11; end
-
-`ifdef RELOCATABLE_CALLBACKS
-				11: begin address<=`CALLBACK_BASE; store<=0; phase<=phase+1; end
-				12: begin callbacks[store][15:8]<=data; address<=address+1; phase<=phase+1; end
-				13: begin callbacks[store][7:0]<=data; address<=address+4; store<=store+1; if (store==4) phase<=14; else phase<=12; end
-`endif
-
+				10: begin rlcdReset<=address[10]; rlcdRS<=1; printEnable<=0; address<=address+1; if (address[10:0]=='h7ff) phase<=11; end
 				default: begin
 					address<=pc;
 					forceStaticRead<=0;
@@ -946,16 +917,18 @@ begin
 		end
 		`STATE_CALL_FUNCTION: begin
 			case (phase)
-				0: begin $display("Call function %h", operand[0]*2); address<=csStack+phase; writeEnable<=1; dataOut<=(delayedBranch<<2)|(negate<<1)|pc[16]; phase<=phase+1; end
+				0: begin $display("Call function %h", operand[0]*2); address<=csStack; writeEnable<=1; dataOut<=(delayedBranch<<2)|(negate<<1)|pc[16]; phase<=phase+1; end
 				1: begin address<=address+1; dataOut<=pc[15:8]; phase<=phase+1; end
 				2: begin address<=address+1; dataOut<=pc[7:0]; phase<=phase+1; end
 				3: begin address<=address+1; dataOut<=stackAddress[16]; phase<=phase+1; end
 				4: begin address<=address+1; dataOut<=stackAddress[15:8]; phase<=phase+1; end
 				5: begin address<=address+1; dataOut<=stackAddress[7:0]; phase<=phase+1; end
-				6: begin address<=address+1; dataOut<=store; phase<=phase+1; end
+				6: begin address<=address+1; dataOut<=store; phase<=(operand[0][15:3]==0)?phase+1:10; end
+				7: begin address<=`CALLBACK_BASE+5*(operand[0]&7); writeEnable<=0; phase<=phase+1; end
+				8: begin address<=address+1; operand[0][15:8]<=data; phase<=phase+1; end
+				9: begin operand[0][7:0]<=data; phase<=phase+1; end
 				default: begin
 					csStack<=csStack+37;
-					pc<=2*operand[0];
 					address<=2*operand[0];
 					state<=`STATE_READ_FUNCTION;
 					writeEnable<=0;
@@ -995,8 +968,8 @@ begin
 						phase<=phase+1;
 					end
 					currentLocal<=0;
-					pc<=pc+1;
-					address<=pc+1;
+					pc<=address+1;
+					address<=address+1;
 				end
 				1: begin
 					if (opsToRead&1) begin
