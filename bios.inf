@@ -630,10 +630,16 @@ if (readingWord)
 	FindInDictionary(text, parse);
 }
 
+@get_touch $13 -> text;
+@print_num text;
+@print_char 32;
+@get_touch $93 -> text;
+@print_num text;
+
 UpdateStatus();
 UpdateScreen();
 @write_reg $0007 $0133; ! Turn on the screen
-if (cReadCounter==>contextW==4)
+if (cReadCounter==>contextW==0)
 	quit;
 cReadCounter==>contextW=cReadCounter==>contextW+1;
 ];

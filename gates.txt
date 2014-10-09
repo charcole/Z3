@@ -83,6 +83,27 @@ Todo:
 - Reset button (hardware)
 - Text input method (Touchscreen or PS/2) (software+hardware)
 
+
+Touch screen
+
+
+SenseY=+5 or sense
+SenseX=+5 or sense
+DY=Z/GND;
+DX=Z/GND/+5;
+
+    +5
+Sense/Z
+   GND
+
+  Sense
+ +5/GND
+   Z
+
+   Sense
+ Sense/GND
+    +5
+
 Moya
 Ellie/Ally
 Laura
