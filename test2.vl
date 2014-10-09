@@ -594,7 +594,7 @@ task Random;
 			0: begin if ($signed(operand[0])<0) begin random<=operand[0]; state<=`STATE_FETCH_OP; end else begin random<=random^(random<<13); end phase<=phase+1; end
 			1: begin random<=random^(random>>9); phase<=phase+1; end
 			2: begin random<=random^(random<<7); phase<=phase+1; end
-			default: begin state<=`STATE_DIVIDE; delayedBranch<=1; operand[1]<=operand[0]+1; operand[0]<=random&'h7FFF; phase<=0; end
+			default: begin state<=`STATE_DIVIDE; delayedBranch<=1; delayedRegNum<=1; operand[1]<=operand[0]; operand[0]<=random&'h7FFF; phase<=0; end
 		endcase
 	end
 endtask
@@ -786,8 +786,8 @@ task DoOp;
 					`OP2_ADD: StoreResult($signed(operand[0])+$signed(operand[1]));
 					`OP2_SUB: StoreResult($signed(operand[0])-$signed(operand[1]));
 					`OP2_MUL: StoreResult($signed(operand[0])*$signed(operand[1]));
-					`OP2_DIV: begin state=`STATE_DIVIDE; delayedBranch<=0; end
-					`OP2_MOD: begin state=`STATE_DIVIDE; delayedBranch<=1; end
+					`OP2_DIV: begin state=`STATE_DIVIDE; delayedBranch<=0; delayedRegNum<=0; end
+					`OP2_MOD: begin state=`STATE_DIVIDE; delayedBranch<=1; delayedRegNum<=0; end
 					`OP2_WRITEREG: WriteReg();
 					default: state<=`STATE_HALT;
 				endcase
@@ -1282,7 +1282,7 @@ begin
 					end
 				end
 				default: begin
-					StoreResult(delayedBranch?operand[1]:operand[0]);
+					StoreResult(delayedBranch?(operand[1]+delayedRegNum):operand[0]);
 				end
 			endcase
 		end

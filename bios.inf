@@ -1,12 +1,15 @@
-Constant ScrWidth     = 240;
+Constant Border       = 4;
+Constant ScrWidth     = 240-Border+1;
 Constant ScrHeight    = 320;
-Constant BufferHeight = 640;
+Constant BufferHeight = 630;
 Constant LineStride   = 30;
 Constant LineStrideW  = 15;
 Constant TextHeight   = 10;
-Constant KeyboardStartLine		= 241;
+Constant KeyboardStartLine		= 240;
 Constant KeyboardTextSpacing	= 20;
 Constant KeyboardSepSpacing		= 5;
+Constant StatusHeight = 10;
+Constant ScoreXOffset = (240-Border-26-28-5-5-5-1);
 
 Constant DictionaryOff = 8;
 
@@ -22,6 +25,8 @@ Constant cScroll	  = 18;
 Constant cTextO		  = 20;
 Constant cTextB		  = 22;
 Constant cTextSep	  = 24;
+Constant cScrollStart = 26;
+Constant cReadCounter = 28;
 Constant MaxTextSize  = $400;
 
 Constant contextW     = $D800; ! $1B000
@@ -130,7 +135,7 @@ fontO=cFontO==>contextW;
 fontB=cFontB==>contextW;
 bitmapW=cBitMpW==>contextW;
 char=textO=>textB;
-if (x~=0)
+if (x~=Border)
 	checkWrap=1;
 firstLine=1;
 while (char)
@@ -159,8 +164,15 @@ while (char)
 	if (x+w>ScrWidth || char==10)
 	{
 		y=y+TextHeight;
-		if (y>BufferHeight)
+		if (y>BufferHeight-TextHeight)
 			y=0;
+		if (y>(KeyboardStartLine-StatusHeight)-TextHeight || cScrollStart==>contextW)
+		{
+			cScrollStart==>contextW=1;
+			cScroll==>contextW=cScroll==>contextW+TextHeight;
+			if (cScroll==>contextW>=BufferHeight)
+				cScroll==>contextW=0;
+		}
 		a=y*LineStride;
 		b=LineStride*5;
 		while (b)
@@ -169,10 +181,10 @@ while (char)
 			a=a+2;
 			b--;
 		}
-		x=0;
+		x=Border;
 		firstLine=0;
 	}
-	if (x~=0 || char>32 || firstLine)
+	if (x~=Border || char>32 || firstLine)
 	{
 		if (cTextSep==>contextW==0 || char==124)
 		{
@@ -202,23 +214,30 @@ cScrenY==>contextW=y;
 
 [UpdateScreen
 ptr size sizeW; !temps
-	@write_reg $ffff $ff14;	! Set colour 0
-	@write_reg $ffff $49c2; ! Set colour 1
 	@write_reg 32 0;
 	@write_reg 33 0;
+	@blit1 0 LineStride $49c2 $49c2;
+	@write_reg 32 0;
+	@write_reg 33 1;
+	ptr=(cBitMpW==>contextW)+(LineStrideW*BufferHeight);
+	sizeW=LineStride*(StatusHeight-1);
+	@blit1 ptr sizeW $49c2 $ff14;
+	@write_reg 32 0;
+	@write_reg 33 StatusHeight;
 	ptr=(cBitMpW==>contextW)+(LineStrideW*(cScroll==>contextW));
-	sizeW=LineStride*KeyboardStartLine;
-	if ((cScroll==>contextW) + KeyboardStartLine > BufferHeight)
+	sizeW=LineStride*(KeyboardStartLine-StatusHeight);
+	if ((cScroll==>contextW) + (KeyboardStartLine-StatusHeight) > BufferHeight)
 	{
 		size=BufferHeight-(cScroll==>contextW);
 		sizeW=LineStride*size;
-		@blit1 ptr sizeW;
+		@blit1 ptr sizeW $ff14 $49c2;
 		ptr=cBitMpW==>contextW;
+		size=size+StatusHeight;
 		@write_reg 32 0;
 		@write_reg 33 size;
 		sizeW=LineStride*(KeyboardStartLine-size);
 	}
-	@blit1 ptr sizeW;
+	@blit1 ptr sizeW $ff14 $49c2;
 ];
 
 [InitScreenRegs;
@@ -264,15 +283,16 @@ ptr size sizeW; !temps
 cAbbrev==>contextW=$18-->0;
 cEncodO==>contextW=$FFFF; !1E500
 cEncodB==>contextW=$E501;
-cScrenX==>contextW=0;
+cScrenX==>contextW=Border;
 cScrenY==>contextW=0;
 cFontO ==>contextW=$FFFF; ! $1E000
 cFontB ==>contextW=$E001;
-cBitMpW==>contextW=-BufferHeight*LineStrideW;
+cBitMpW==>contextW=-(BufferHeight+StatusHeight)*LineStrideW;
 cScroll==>contextW=0;
 cTextO==>contextW=cBitMpW==>contextW;
 cTextB==>contextW=cBitMpW==>contextW-MaxTextSize;
 cTextSep==>contextW=0;
+cScrollStart==>contextW=0;
 ];
 
 [SysPrint
@@ -338,51 +358,48 @@ for (i=0: i<2; i++)
 	cTextSep==>contextW=i;
 	if (shifted)
 	{
-		@print "   Q   |  W   |  E   |  R   |   T   |  Y   |  U   |   I   |  O   |  P^";
-		@print "        A  |   S   |  D   |  F   |  G   |  H   |   J   |  K   |   L^";
-		@print "            Z  |   X   |  C   |  V   |  B   |  N   |  M   |   ,^";
+		@print " Q   |  W   |  E   |  R   |   T   |  Y   |  U   |   I   |  O   |  P^";
+		@print "      A  |   S   |  D   |  F   |  G   |  H   |   J   |  K   |   L^";
+		@print "          Z  |   X   |  C   |  V   |  B   |  N   |  M   |   ,^";
 	}
 	else
 	{
-		@print "    q  |   w  |   e   |  r   |   t   |   y  |   u   |   i   |  o   |   p^";
-		@print "        a  |   s   |  d   |   f   |   g  |   h   |  j   |   k   |   l^";
-		@print "            z  |   x   |  c   |   v  |   b   |  n   |  m   |   ,^";
+		@print "  q  |   w  |   e   |  r   |   t   |   y  |   u   |   i   |  o   |   p^";
+		@print "      a  |   s   |  d   |   f   |   g  |   h   |  j   |   k   |   l^";
+		@print "          z  |   x   |  c   |   v  |   b   |  n   |  m   |   ,^";
 	}
-	@print "          Shift          |        Space         |         Enter^";
+	@print "        Shift          |        Space         |         Enter^";
 }
 cTextSep==>contextW=0;
-@write_reg $ffff $22b0;
-@write_reg $ffff $d75f;
 @write_reg 32 0;
 size=LineStride*TextHeight;
 ptr=cBitMpW==>contextW;
-line=KeyboardStartLine+KeyboardSepSpacing;
+line=KeyboardStartLine+1+KeyboardSepSpacing;
 for (i=0: i<4: i=i+1)
 {
 	@write_reg 33 line;
-	@blit1 ptr size;
+	@blit1 ptr size $22b0 $d75f;
 	ptr=ptr+TextHeight*LineStrideW;
 	line=line+KeyboardTextSpacing;
 }
 size=LineStride*KeyboardSepSpacing;
-line=KeyboardStartLine;
+line=KeyboardStartLine+1;
 for (i=0: i<4: i=i+1)
 {
 	@write_reg 33 line;
-	@blit1 ptr size;
+	@blit1 ptr size $22b0 $d75f;
 	line=line+TextHeight+KeyboardSepSpacing-1;
 	@write_reg 33 line;
-	@blit1 ptr size;
+	@blit1 ptr size $22b0 $d75f;
 	line=line+KeyboardSepSpacing+1;
 	ptr=ptr+TextHeight*LineStrideW;
 }
-@write_reg $ffff $d75f;
-line=KeyboardStartLine-1;
+line=KeyboardStartLine;
 size=LineStride;
 for (i=0: i<4: i=i+1)
 {
 	@write_reg 33 line;
-	@blit1 ptr size;
+	@blit1 ptr size $d75f $d75f;
 	line=line+TextHeight+2*KeyboardSepSpacing;
 }
 ptr=cBitMpW==>contextW;
@@ -491,11 +508,50 @@ while (count)
 }
 ];
 
+[UpdateStatus
+x y scoreX;
+
+x=cBitMpW==>contextW+BufferHeight*LineStrideW;
+y=StatusHeight*LineStrideW;
+while (y)
+{
+	0==>x=0;
+	x++;
+	y--;
+}
+
+x=cScrenX==>contextW;
+y=cScrenY==>contextW;
+cScrenX==>contextW=Border;
+cScrenY==>contextW=BufferHeight;
+@print_obj sys__glob0;
+scoreX=ScoreXOffset;
+if (sys__glob1>=1000)
+	scoreX=scoreX-15;
+else if (sys__glob1>=100)
+	scoreX=scoreX-10;
+else if (sys__glob1>=10)
+	scoreX=scoreX-5;
+if (sys__glob2>=1000)
+	scoreX=scoreX-15;
+else if (sys__glob2>=100)
+	scoreX=scoreX-10;
+else if (sys__glob2>=10)
+	scoreX=scoreX-5;
+cScrenX==>contextW=scoreX;
+print "Score:";
+@print_num sys__glob1;
+print " Moves:";
+@print_num sys__glob2;
+cScrenX==>contextW=x;
+cScrenY==>contextW=y;
+];
+
 [SysRead
 parse text
 count i c sep dict readingWord parse0;
 
-if (26==>contextW==0)
+if ((cReadCounter==>contextW&1)==0)
 {
 	text->0=9;
 	text->1=109;
@@ -573,10 +629,12 @@ if (readingWord)
 	parse->2=i-parse->3;
 	FindInDictionary(text, parse);
 }
+
+UpdateStatus();
 UpdateScreen();
 @write_reg $0007 $0133; ! Turn on the screen
-if (26==>contextW==2)
+if (cReadCounter==>contextW==4)
 	quit;
-26==>contextW=26==>contextW+1;
+cReadCounter==>contextW=cReadCounter==>contextW+1;
 ];
 

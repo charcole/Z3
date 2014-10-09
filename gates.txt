@@ -82,9 +82,6 @@
 Todo:
 - Reset button (hardware)
 - Text input method (Touchscreen or PS/2) (software+hardware)
-- Implement Scrolling (software)
-- Status line (software)
-- Screen simulator for quicker development (external software)
 
 Moya
 Ellie/Ally
