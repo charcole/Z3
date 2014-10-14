@@ -1,11 +1,11 @@
-module boss(clk, adcDout, data, address, we, pe, romCS, ramCS, led0, led1, led2, lcdCS, lcdRS, lcdReset, nadcCS);
+module boss(clk, adcDout, data, waddress, we, pe, romCS, ramCS, led0, led1, led2, lcdCS, lcdRS, lcdReset, nadcCS);
 
 input clk;
 input adcDout;
 
 inout [7:0] data;
 
-output [16:0] address;
+output [16:0] waddress;
 output we;
 output pe;
 output romCS;
@@ -26,6 +26,7 @@ reg rlcdRS;
 reg rlcdReset;
 reg adcCS;
 
+wire [16:0] waddress;
 wire we;
 wire pe;
 wire romCS;
@@ -192,8 +193,9 @@ reg [1:0] long;
 reg nextLoadIsDynamic;
 
 reg [2:0] divider;
+reg adcClk;
+reg adcDin;
 
-reg [3:0] adcConfig;
 // xp<=adcConfig[0]?0:'bZ;
 // yp<=adcConfig[1]?1:'bZ;
 // xm<=adcConfig[2]?1:'bZ;
@@ -215,28 +217,35 @@ begin
 	divider=0;
 	nextLoadIsDynamic=0;
 	adcCS=0;
-	adcConfig=0;
 end
 
+assign waddress[16:2] = address[16:2];
+assign waddress[0] = adcCS?adcClk:address[0];
+assign waddress[1] = adcCS?adcDin:address[1];
 assign data[5:0] = (writeEnable || printEnable)?dataOut[5:0]:6'bZ;
-assign data[6] = (writeEnable || printEnable || (adcCS && adcConfig[0]))?dataOut[6]:'bZ;
-assign data[7] = (writeEnable || printEnable || (adcCS && adcConfig[1]))?dataOut[7]:'bZ;
+assign data[6] = (writeEnable || printEnable)?dataOut[6]:((adcCS && operand[0][0])?0:'bZ);
+assign data[7] = (writeEnable || printEnable)?dataOut[7]:((adcCS && operand[0][1])?1:'bZ);
 assign romCS = !(!adcCS && !printEnable && !writeEnable && !forceDynamicRead && (forceStaticRead || address[16]==1));
 assign ramCS = !(!adcCS && !printEnable && (writeEnable || forceDynamicRead || (!forceStaticRead && address[16]==0)));
-assign pe = adcCS?(adcConfig[3]?0:'bZ):(!printEnable 
+assign pe = adcCS?(operand[0][3]?0:'bZ):(!printEnable 
 `ifndef HARDWARE_PRINT
 `ifdef REAL_HARDWARE // Strobe over first part of cycle
 	|| divider[2] || divider==0
 `endif
 `endif
-)
-;
+);
 assign we = !writeEnable;
 assign led0 = !address[12];
 assign led1 = !address[13];
 assign led2 = !address[14];
-assign lcdCS = adcCS?1:pe;
-assign lcdRS = adcCS?(adcConfig[2]?1:'bZ):rlcdRS;
+assign lcdCS = !printEnable 
+`ifndef HARDWARE_PRINT
+`ifdef REAL_HARDWARE // Strobe over first part of cycle
+	|| divider[2] || divider==0
+`endif
+`endif
+;
+assign lcdRS = adcCS?(operand[0][2]?1:'bZ):rlcdRS;
 assign lcdReset = rlcdReset;
 assign nadcCS = !adcCS;
 
@@ -443,9 +452,12 @@ task SetProp;
 			2: begin address<=temp|data; phase<=phase+1; end
 			3: begin address<=address+2*data+1; phase<=phase+1; end
 			4: begin
+`ifndef REAL_HARDWARE
 				if (data==0) begin // end of search
 					state<=`STATE_HALT;
-				end else if (data[4:0]==operand[1]) begin // found property
+				end else
+`endif
+				if (data[4:0]==operand[1]) begin // found property
 					if (data[7:5]==0) begin // only 1 byte
 						dataOut<=operand[2][7:0];
 						phase<=6;
@@ -497,9 +509,11 @@ task FindNextProp;
 			default: begin
 				if (operand[1]==0)
 					StoreResult(data[4:0]);
-				else if (data==0) begin	// end of search
+`ifndef REAL_HARDWARE
+				else if (data==0)	// end of search
 					state<=`STATE_HALT;
-				end else begin // skip over data
+`endif
+				else begin // skip over data
 					if (data[4:0]==operand[1])
 						operand[1]<=0;
 					address<=address+data[7:5]+2;
@@ -514,7 +528,7 @@ task GetPropLen;
 		if (phase==0) begin
 			address<=operand[0]-1; phase<=phase+1;
 		end else begin
-			StoreResult((operand[0]==0)?0:data[7:5]+1);
+			StoreResult((operand[0]==0)?0:(data[7:5]+1));
 		end
 	end
 endtask
@@ -551,11 +565,11 @@ endtask
 
 task Print;
 	input [16:0] addr;
-	input [7:0] effect;
+	input [1:0] effect;
 	begin
 		temp<=addr;
 		state<=`STATE_PRINT;
-		returnValue<=effect;
+		returnValue[1:0]<=effect;
 		delayedBranch<=0;
 		phase<=0;
 	end
@@ -565,8 +579,8 @@ task PrintObj;
 	begin
 		case (phase[1:0])
 			0: begin address<=GetObjectAddr(operand[0])+7; phase<=phase+1; end
-			1: begin returnValue[7:0]<=data; address<=address+1; phase<=phase+1; end
-			default: Print((returnValue<<8)+data+1, `PRINTEFFECT_FETCH);
+			1: begin store<=data; address<=address+1; phase<=phase+1; end
+			default: Print((store<<8)+data+1, `PRINTEFFECT_FETCH);
 		endcase
 	end
 endtask
@@ -740,35 +754,31 @@ task GetTouch;
 	begin
 		case (phase)
 			0: begin
-				dataOut[7]<=1;
-				dataOut[6]<=0;
-				adcConfig<=operand[0][3:0];
 				adcCS<=1;
-				address[0]<=0; // clk
-				address[1]<=1; // din
+				adcClk<=0;
+				adcDin<=0;
 				operand[1]<='hffff;
-			   	operand[2]<=1;
+			   operand[2]<=1;
 				phase<=1;
 			end
 			1: begin
 				operand[2][3:0]<=operand[2][3:0]+1;
 				if (operand[2][3:0]==0) begin			// Max clock rate for ADC is ~ 1MHz so divide our clock by 16
-					address[0]<=1; // clk
-					operand[1][15:1]<=operand[1][14:0];
-					operand[1][0]<=adcDout;
+					adcClk<=1;
+					operand[1]<=(operand[1]<<1)+adcDout;
 					phase<=(!operand[1][10])?3:2;
 				end
 			end
 			2: begin
 				operand[2][3:0]<=operand[2][3:0]+1;
 				if (operand[2][3:0]==0) begin			// Max clock rate for ADC is ~ 1MHz so divide our clock by 16
-					address[0]<=0;	// clk
-					operand[0][14:4]<=operand[0][15:5];
-					address[1]<=operand[0][4]; // din
+					operand[0][8:4]<=(operand[0][8:4]>>1);
+					adcDin<=operand[0][4];
+					adcClk<=0;
 					phase<=1;
 				end
 			end
-			3: begin adcCS<=0; StoreResult(operand[1]&'h3FF); end
+			default: begin adcCS<=0; StoreResult(operand[1]&'h3FF); end
 		endcase
 	end
 endtask
@@ -779,7 +789,7 @@ task DoOp;
 			`OP_0: begin
 				if (phase==0)
 					$display("PC:%h Doing op0:%d Store:%h Branch:%h/%d", curPC, op, operand[0], store, branch, negate);
-				case (op)
+				case (op[3:0])
 					`OP0_RTRUE: ReturnFunction(1);
 					`OP0_RFALSE: ReturnFunction(0);
 					`OP0_PRINT: Print(pc, `PRINTEFFECT_FETCHAFTER);
@@ -800,7 +810,7 @@ task DoOp;
 			`OP_1: begin
 				if (phase==0)
 					$display("PC:%h Doing op1:%d Operands:%h Store:%h Branch:%h/%d", curPC, op, operand[0], store, branch, negate);
-				case (op)
+				case (op[3:0])
 					`OP1_JZ: DoBranch(operand[0]==0);
 					`OP1_GETSIBLING: GetRelative(1,1);
 					`OP1_GETCHILD: GetRelative(2,1);
@@ -1301,9 +1311,12 @@ begin
 						operand[0]<=-operand[0];
 					else
 						operand[0]<=operand[0];
+`ifndef REAL_HARDWARE
 					if (operand[1]==0)
 						state=`STATE_HALT;
-					else if ($signed(operand[1])<0)
+					else
+`endif
+					if ($signed(operand[1])<0)
 						operand[1]<=-operand[1];
 					operand[2]<=1;
 					operand[3]<=0;

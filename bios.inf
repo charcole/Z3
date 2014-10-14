@@ -630,11 +630,27 @@ if (readingWord)
 	FindInDictionary(text, parse);
 }
 
-@get_touch $13 -> text;
-@print_num text;
-@print_char 32;
-@get_touch $93 -> text;
-@print_num text;
+!if (cReadCounter==>contextW>1)
+!{
+	@get_touch $13 -> text;
+	@print_num text;
+	@print_char 32;
+	@get_touch $93 -> text;
+	@print_num text;
+	@print_char 32;
+	@get_touch $1A -> text;
+	@print_num text;
+	@print_char 32;
+	@get_touch $9A -> text;
+	@print_num text;
+	@print_char 32;
+	@get_touch $15 -> text;
+	@print_num text;
+	@print_char 32;
+	@get_touch $95 -> text;
+	@print_num text;
+	@new_line;
+!}
 
 UpdateStatus();
 UpdateScreen();

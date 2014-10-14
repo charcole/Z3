@@ -79,9 +79,13 @@
 4401 (96%)		- Blit as arguments
 4406 (96%)		- New relocatable BIOS
 
+4545 (99%)		- Touch screen reading (maybe buggy)
+
 Todo:
 - Reset button (hardware)
 - Text input method (Touchscreen or PS/2) (software+hardware)
+- Work out why ADC doesn't read Vpp properly
+- Smooth scrolling / paging (Software)
 
 
 Touch screen
@@ -92,9 +96,9 @@ SenseX=+5 or sense
 DY=Z/GND;
 DX=Z/GND/+5;
 
-    +5
-Sense/Z
    GND
+Sense/Z
+    +5
 
   Sense
  +5/GND
