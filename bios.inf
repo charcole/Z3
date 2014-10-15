@@ -368,7 +368,7 @@ for (i=0: i<2; i++)
 		@print "      a  |   s   |  d   |   f   |   g  |   h   |  j   |   k   |   l^";
 		@print "          z  |   x   |  c   |   v  |   b   |  n   |  m   |   ,^";
 	}
-	@print "        Shift          |        Space         |         Enter^";
+	@print "        Delete         |        Space         |         Enter^";
 }
 cTextSep==>contextW=0;
 @write_reg 32 0;
@@ -547,32 +547,121 @@ cScrenX==>contextW=x;
 cScrenY==>contextW=y;
 ];
 
+[GetKey
+x y;
+
+while (1)
+{
+	do !wait for not-touch
+	{
+		@get_touch $93 -> x;
+	} until (x>=1000);
+	do !wait for touch
+	{
+		@get_touch $93 -> x;
+	} until (x<1000);
+	@get_touch $95 -> x; ! x
+	@get_touch $1A -> y; ! y
+	if (y>=870)
+	{
+		if (x<=365)	! delete
+			return 0;
+		if (x<=650)
+			return ' ';
+		return 10;
+	}
+	else if (y>=820)
+		{
+			if (x<=250)
+				return 'z';
+			if (x<=330)
+				return 'x';
+			if (x<=420)
+				return 'c';
+			if (x<=500)
+				return 'v';
+			if (x<=590)
+				return 'b';
+			if (x<=680)
+				return 'n';
+			if (x<=765)
+				return 'm';
+			return ',';
+		}
+	else if (y>=770)
+	{
+		if (x<=205)
+			return 'a';
+		if (x<=300)
+			return 's';
+		if (x<=370)
+			return 'd';
+		if (x<=460)
+			return 'f';
+		if (x<=540)
+			return 'g';
+		if (x<=635)
+			return 'h';
+		if (x<=715)
+			return 'j';
+		if (x<=805)
+			return 'k';
+		return 'l';
+	}
+	else if (y>=720)
+	{
+		if (x<=170)
+			return 'q';
+		if (x<=250)
+			return 'w';
+		if (x<=340)
+			return 'e';
+		if (x<=420)
+			return 'r';
+		if (x<=500)
+			return 't';
+		if (x<=590)
+			return 'y';
+		if (x<=680)
+			return 'u';
+		if (x<=765)
+			return 'i';
+		if (x<=840)
+			return 'o';
+		return 'p';
+	}
+}
+];
+
 [SysRead
 parse text
 count i c sep dict readingWord parse0;
 
-if ((cReadCounter==>contextW&1)==0)
+UpdateStatus();
+UpdateScreen();
+@write_reg $0007 $0133; ! Turn on the screen
+
+i=0;
+do
 {
-	text->0=9;
-	text->1=109;
-	text->2=111;
-	text->3=112;
-	text->4=32;
-	text->5=102;
-	text->6=108;
-	text->7=111;
-	text->8=111;
-	text->9=114;
-	text->10=0;
-}
-else
-{
-	text->0=1;
-	text->1=105;
-	text->2=0;
-}
-TextToConsole(text, 1);
-SysPrintChar(10);
+	i++;
+	text->i=GetKey();
+	if (text->i==0)
+	{
+		if (i>=2)
+		{
+			i=i-2;
+			SysPrintChar('<');
+		}
+	}
+	else
+	{
+		SysPrintChar(text->i);
+	}
+	UpdateScreen();
+} until (i && text->i==10);
+text->i=0;
+text->0=(i-1);
 
 parse0=parse;
 parse++;
@@ -629,34 +718,4 @@ if (readingWord)
 	parse->2=i-parse->3;
 	FindInDictionary(text, parse);
 }
-
-!if (cReadCounter==>contextW>1)
-!{
-	@get_touch $13 -> text;
-	@print_num text;
-	@print_char 32;
-	@get_touch $93 -> text;
-	@print_num text;
-	@print_char 32;
-	@get_touch $1A -> text;
-	@print_num text;
-	@print_char 32;
-	@get_touch $9A -> text;
-	@print_num text;
-	@print_char 32;
-	@get_touch $15 -> text;
-	@print_num text;
-	@print_char 32;
-	@get_touch $95 -> text;
-	@print_num text;
-	@new_line;
-!}
-
-UpdateStatus();
-UpdateScreen();
-@write_reg $0007 $0133; ! Turn on the screen
-if (cReadCounter==>contextW==0)
-	quit;
-cReadCounter==>contextW=cReadCounter==>contextW+1;
 ];
-

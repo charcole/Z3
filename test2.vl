@@ -756,7 +756,7 @@ task GetTouch;
 			0: begin
 				adcCS<=1;
 				adcClk<=0;
-				adcDin<=0;
+				adcDin<=1;
 				operand[1]<='hffff;
 			   operand[2]<=1;
 				phase<=1;
