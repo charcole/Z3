@@ -302,9 +302,9 @@ if (printO&2) ! Doing print_ret so need to add a newline
 {
 	printO=cTextO==>contextW;
 	printW=cTextB==>contextW;
-	printO->printW=10;
+	printO=>printW=10;
 	printW++;
-	printO->printW=0;
+	printO=>printW=0;
 }
 cTextB==>contextW=(cBitMpW==>contextW-MaxTextSize); ! reset buffer as Decode modifies it
 TextToConsole(cTextO==>contextW, cTextB==>contextW);
