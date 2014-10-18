@@ -548,18 +548,38 @@ cScrenY==>contextW=y;
 ];
 
 [GetKey
-x y;
+x y
+startY scrollStart scrollLimit scroll;
 
+startY=1024;
+scrollLimit=cScroll==>contextW;
 while (1)
 {
+	scrollStart=scroll;
 	do !wait for not-touch
 	{
+		if (startY~=1024)
+		{
+			@get_touch $1A -> y; ! y
+			scroll=scrollStart+(startY-y)/3;
+			if (scroll>0)
+			{
+				scroll=0;
+			}
+			else if (scroll<-BufferHeight+KeyboardStartLine-StatusHeight)
+			{
+				scroll=-BufferHeight+KeyboardStartLine-StatusHeight;
+			}
+			cScroll==>contextW=((scrollLimit+scroll+BufferHeight+BufferHeight)%BufferHeight);
+			UpdateScreen();
+		}
 		@get_touch $93 -> x;
 	} until (x>=1000);
 	do !wait for touch
 	{
 		@get_touch $93 -> x;
 	} until (x<1000);
+	startY=1024;
 	@get_touch $95 -> x; ! x
 	@get_touch $1A -> y; ! y
 	if (y>=870)
@@ -630,6 +650,46 @@ while (1)
 			return 'o';
 		return 'p';
 	}
+	else
+	{
+		startY=y;
+	}
+}
+];
+
+[EraseConsole
+sx sy
+i ptr endptr bitmapW mask;
+
+bitmapW=cBitMpW==>contextW;
+
+i=sx;
+mask=1;
+while (sx&15)
+{
+	mask=mask*2;
+	sx++;
+}
+mask=~(mask-1);
+sx=i/16;
+
+while (sy<=cScrenY==>contextW)
+{
+	for (i=0: i<10: i++)
+	{
+		ptr=(sy+i)*LineStride+sx+sx;
+		endptr=(sy+i+1)*LineStride;
+		ptr==>bitmapW=ptr==>bitmapW&mask;
+		ptr=ptr+2;
+		while (ptr<endptr)
+		{
+			ptr==>bitmapW=0;
+			ptr=ptr+2;
+		}
+	}
+	sx=0;
+	sy=sy+10;
+	mask=0;
 }
 ];
 
@@ -641,23 +701,25 @@ UpdateStatus();
 UpdateScreen();
 @write_reg $0007 $0133; ! Turn on the screen
 
+c=cScrenX==>contextW;
+sep=cScrenY==>contextW;
+dict=cScroll==>contextW;
+
 i=0;
 do
 {
 	i++;
 	text->i=GetKey();
-	if (text->i==0)
+	if (text->i==0 && i>=2)
 	{
-		if (i>=2)
-		{
-			i=i-2;
-			SysPrintChar('<');
-		}
+		i=i-2;
 	}
-	else
-	{
-		SysPrintChar(text->i);
-	}
+	EraseConsole(c,sep);
+	cScrenX==>contextW=c;
+	cScrenY==>contextW=sep;
+	cScroll==>contextW=dict;
+	text->(i+1)=0;
+	TextToConsole(1, text);
 	UpdateScreen();
 } until (i && text->i==10);
 text->i=0;

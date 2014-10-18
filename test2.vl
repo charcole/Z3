@@ -1,4 +1,4 @@
-module boss(clk, adcDout, data, waddress, we, pe, romCS, ramCS, led0, led1, led2, lcdCS, lcdRS, lcdReset, nadcCS);
+module boss(clk, adcDout, data, waddress, we, pe, romCS, ramCS, led0, led1, led2, lcdCS, lcdRS, lcdReset, nadcCS, a17, a18);
 
 input clk;
 input adcDout;
@@ -17,6 +17,8 @@ output lcdCS;
 output lcdRS;
 output lcdReset;
 output nadcCS;
+output a17;
+output a18;
 
 reg [16:0] address;
 reg [7:0] dataOut;
@@ -25,6 +27,8 @@ reg writeEnable;
 reg rlcdRS;
 reg rlcdReset;
 reg adcCS;
+reg a17;
+reg a18;
 
 wire [16:0] waddress;
 wire we;
@@ -101,6 +105,7 @@ wire nadcCS;
 `define OP1_INC		'h5
 `define OP1_DEC		'h6
 `define OP1_PRINTADDR 'h7
+`define OP1_SWITCHBANK 'h8
 `define OP1_REMOVEOBJ 'h9
 `define OP1_PRINTOBJ 'hA
 `define OP1_RET		'hB
@@ -217,6 +222,8 @@ begin
 	divider=0;
 	nextLoadIsDynamic=0;
 	adcCS=0;
+	a17=0;
+	a18=0;
 end
 
 assign waddress[16:2] = address[16:2];
@@ -766,7 +773,7 @@ task GetTouch;
 				if (operand[2][3:0]==0) begin			// Max clock rate for ADC is ~ 1MHz so divide our clock by 16
 					adcClk<=1;
 					operand[1]<=(operand[1]<<1)+adcDout;
-					phase<=(!operand[1][10])?3:2;
+					phase<=(!operand[1][9])?3:2;
 				end
 			end
 			2: begin
@@ -818,7 +825,8 @@ task DoOp;
 					`OP1_GETPROPLEN: GetPropLen();
 					`OP1_INC: StoreResult(operand[0]+1);
 					`OP1_DEC: StoreResult(operand[0]-1);
-					`OP1_PRINTADDR: Print(operand[0], `PRINTEFFECT_FETCH); 
+					`OP1_PRINTADDR: Print(operand[0], `PRINTEFFECT_FETCH);
+					`OP1_SWITCHBANK: begin a17<=operand[0][0]; a18<=operand[0][1]; state<=`STATE_RESET; end
 					`OP1_REMOVEOBJ: begin operNum<=`OP_2; op<=`OP2_INSERTOBJ; operand[1]<=0; end
 					`OP1_PRINTOBJ: PrintObj();
 					`OP1_RET: ReturnFunction(operand[0]);
@@ -1457,6 +1465,8 @@ wire lcdCS;
 wire lcdRS;
 wire lcdReset;
 wire adcCS;
+wire a17;
+wire a18;
 
 integer file,readData,i,j;
 reg [7:0] mem [128*1024:0];
@@ -1512,7 +1522,7 @@ begin
 	$finish;
 end
 
-boss b(clk, adcDout, data, address, writeEnable, printEnable, romCS, ramCS, led0, led1, led2, lcdCS, lcdRS, lcdReset, adcCS);
+boss b(clk, adcDout, data, address, writeEnable, printEnable, romCS, ramCS, led0, led1, led2, lcdCS, lcdRS, lcdReset, adcCS, a17, a18);
 
 endmodule
 
