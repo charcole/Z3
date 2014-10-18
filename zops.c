@@ -7,6 +7,7 @@
 #include "SDL.h"
 
 #define MAX_TOKEN_LEN 256
+#define USE_BIOS 1
 
 u16 randomseed=1;
 
@@ -787,7 +788,7 @@ void process0OPInstruction()
 			break;
 		case 2: //print
 			{
-#if 0
+#if !USE_BIOS
 				m_pc=printText(m_pc);
 #else
 				int origAddr=m_pc;
@@ -805,7 +806,7 @@ void process0OPInstruction()
 			}
 		case 3: //print_ret
 			{
-#if 0
+#if !USE_BIOS
 				m_pc=printText(m_pc);
 				printf("\n");
 				returnRoutine(1);
@@ -844,10 +845,13 @@ void process0OPInstruction()
 			haltInstruction();
 			break;
 		case 0xB: //new_line
-			//printf("\n");
+#if !USE_BIOS
+			printf("\n");
+#else
 			m_ins.operands[1].value='\n';
 			m_ins.numOps=2;
 			callBIOS(2,FALSE);
+#endif
 			break;
 		case 0xC: //show_status
 			haltInstruction();
@@ -915,11 +919,14 @@ void process1OPInstruction()
 				break;
 			}	
 		case 7: //print_addr
-			//printText(m_ins.operands[0].value);
+#if !USE_BIOS
+			printText(m_ins.operands[0].value);
+#else
 			m_ins.operands[1].value=m_ins.operands[0].value&1;
 			m_ins.operands[2].value=m_ins.operands[0].value>>1;
 			m_ins.numOps=3;
 			callBIOS(1,FALSE);
+#endif
 			break;
 		case 8: //call_1s
 			illegalInstruction();
@@ -931,12 +938,16 @@ void process1OPInstruction()
 			}
 		case 0xA: //print_obj
 			{
+#if !USE_BIOS
 				ZObject obj=getObject(m_ins.operands[0].value);
-				//printText(obj.propTable+1);
+				printText(obj.propTable+1);
+#else
+				ZObject obj=getObject(m_ins.operands[0].value);
 				m_ins.operands[1].value=(obj.propTable+1)&1;
 				m_ins.operands[2].value=(obj.propTable+1)>>1;
 				m_ins.numOps=3;
 				callBIOS(1,FALSE);
+#endif
 				break;
 			}
 		case 0xB: //ret
@@ -946,11 +957,14 @@ void process1OPInstruction()
 			m_pc+=m_ins.operands[0].value-2;
 			break;
 		case 0xD: //print_paddr
-			//printText(2*(m_ins.operands[0].value&0xFFFF));
+#if !USE_BIOS
+			printText(2*(m_ins.operands[0].value&0xFFFF));
+#else
 			m_ins.operands[1].value=0;
 			m_ins.operands[2].value=m_ins.operands[0].value;
 			m_ins.numOps=3;
 			callBIOS(1,FALSE);
+#endif
 			break;
 		case 0xE: //load
 			setVariable(m_ins.store, readVariableIndirect(m_ins.operands[0].value));
@@ -1159,7 +1173,7 @@ void process2OPInstruction()
 			illegalInstruction();
 			break;
 		case 0x1E:
-			printf("WriteReg: %04x %04x\n", m_ins.operands[0].value&0xFFFF, m_ins.operands[1].value&0xFFFF);
+			//printf("WriteReg: %04x %04x\n", m_ins.operands[0].value&0xFFFF, m_ins.operands[1].value&0xFFFF);
 			if (m_ins.operands[0].value==0x22)
 			{
 				screen[curIdx%(320*240)]=m_ins.operands[1].value;
@@ -1230,7 +1244,7 @@ void processVARInstruction()
 			}
 		case 4: //sread
 			{
-#if 0
+#if !USE_BIOS
 				static char input[4096];
 				int bufferAddr=m_ins.operands[0].value;
 				int parseAddr=m_ins.operands[1].value;
@@ -1260,16 +1274,22 @@ void processVARInstruction()
 				break;
 			}
 		case 5: //print_char
-			//printf("%c", (char)m_ins.operands[0].value);
+#if !USE_BIOS
+			printf("%c", (char)m_ins.operands[0].value);
+#else
 			m_ins.operands[1].value=m_ins.operands[0].value;
 			m_ins.numOps=2;
 			callBIOS(2,FALSE);
+#endif
 			break;
 		case 6: //print_num
-			//printf("%d", m_ins.operands[0].value);
+#if !USE_BIOS
+			printf("%d", m_ins.operands[0].value);
+#else
 			m_ins.operands[1].value=m_ins.operands[0].value;
 			m_ins.numOps=2;
 			callBIOS(3,FALSE);
+#endif
 			break;
 		case 7: //random
 			{
@@ -1397,7 +1417,7 @@ void processVARInstruction()
 		case 0x1F: //check_arg_count
 			{
 				int i;
-				printf("Blit: %04x %04x %04x %04x\n", m_ins.operands[0].value&0xFFFF, m_ins.operands[1].value&0xFFFF, m_ins.operands[2].value&0xFFFF, m_ins.operands[3].value&0xFFFF);
+				//printf("Blit: %04x %04x %04x %04x\n", m_ins.operands[0].value&0xFFFF, m_ins.operands[1].value&0xFFFF, m_ins.operands[2].value&0xFFFF, m_ins.operands[3].value&0xFFFF);
 				forceDynamic=1;
 				for (i=0; i<(m_ins.operands[1].value&0xFFFF); i++)
 				{
@@ -1525,6 +1545,7 @@ int main(int argc, char **argv)
 		biosRAM=memAlloc(0x10000);
 		screen=memAlloc(320*240*sizeof(u16));
 		memset(biosRAM, 0, 0x10000);
+		fileSeek(&fh, 0x20000*2);
 		fileReadData(&fh, memory, size);
 		fileClose(&fh);
 		ASSERT(ReadMem(0)==3);
@@ -1540,7 +1561,9 @@ int main(int argc, char **argv)
 		WriteMem(0x10,ReadMem(0x10)|(1<<1)); // fixed font
 		stackInit(&m_stack, m_numberstack, sizeof(m_numberstack[0]), ARRAY_SIZEOF(m_numberstack));
 		stackInit(&m_callStack, m_callstackcontents, sizeof(m_callstackcontents[0]), ARRAY_SIZEOF(m_callstackcontents));
+#if USE_BIOS
 		callBIOS(0,FALSE);
+#endif
 		while (1)
 		{
 			executeInstruction();
