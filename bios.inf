@@ -47,6 +47,9 @@ SysPrint();
 SysPrintChar();
 SysPrintNum();
 SysRead();
+SysShowStatus();
+SysQuit();
+SysException();
 ];
 
 [DecodeText
@@ -410,10 +413,124 @@ for (i=0: i<LineStride*TextHeight*8: i=i+2)
 cScrenY==>contextW=0;
 ];
 
+[GameSelect
+palette
+imageO imageP c col count p x y winW winWMax;
+
+y=0;
+c=320;
+while (c)
+{
+	@write_reg 33 y;
+	p=240;
+	while (p)
+	{
+		col=0;
+		if ((c+p)&7 && (c-p)&7)
+			col=((0-->(palette+c))*(0-->(palette+(p+40))))&$7E0;
+		p--;
+		@write_reg 32 p;
+		@write_reg 34 col;
+	}
+	c--;
+	y++;
+}
+palette=palette+320;
+
+imageP=(palette+128)*2+1;
+imageO=$FFFF;
+p=4;
+while (p)
+{
+	if (p&1)
+	{
+		winW=13;
+		winWMax=112;
+	}
+	else
+	{
+		winW=127;
+		winWMax=226;
+	}
+	if (p&2)
+	{
+		y=33;
+	}
+	else
+	{
+		y=167;
+	}
+	x=winW;
+	@write_reg 33 y;
+	count=100*120;
+	while (count>0)
+	{
+		c=imageO->imageP;
+		col=0-->(palette+(c&$7F));
+		imageP++;
+		if (c&$80)
+		{
+			c=imageO->imageP;
+			imageP++;
+			count=count-c;
+			while (c)
+			{
+				if (x>winWMax)
+				{
+					x=winW;
+					y++;
+					@write_reg 33 y;
+				}
+				@write_reg 32 x;
+				x++;
+				@write_reg 34 col;
+				c--;
+			}
+		}
+		else
+		{
+			if (x>winWMax)
+			{
+				x=winW;
+				y++;
+				@write_reg 33 y;
+			}
+			@write_reg 32 x;
+			x++;
+			@write_reg 34 col;	
+			count--;
+		}
+	}
+	p--;
+}
+@write_reg $0007 $0133; ! Turn on the screen
+	
+do !wait for touch
+{
+	@get_touch $93 -> x;
+	if (x<1000)
+		y--;
+	else
+		y=10;
+} until (y==0);
+@get_touch $95 -> x; ! x
+@get_touch $1A -> y; ! y
+p=0;
+if (x>510)
+	p++;
+if (y>508)
+	p=p+2;
+
+if (p>0)
+	@switch_bank p;
+];
+
 [SysInit
 temp;
 temp=InitContext();
 temp=InitScreenRegs();
+if (~~($FFFF->$E580))
+	temp=GameSelect($B400);
 temp=DrawKeyboard();
 ];
 
@@ -576,10 +693,15 @@ while (1)
 		}
 		@get_touch $93 -> x;
 	} until (x>=1000);
+	y=10;
 	do !wait for touch
 	{
 		@get_touch $93 -> x;
-	} until (x<1000);
+		if (x<1000)
+			y--;
+		else
+			y=10;
+	} until (y==0);
 	startY=1024;
 	@get_touch $95 -> x; ! x
 	@get_touch $1A -> y; ! y
@@ -790,4 +912,31 @@ if (readingWord)
 	parse->2=i-parse->3;
 	temp=FindInDictionary(text, parse);
 }
+];
+
+[SysShowStatus
+temp;
+temp=UpdateStatus();
+temp=UpdateScreen();
+];
+
+[SysQuit
+temp;
+@print "^[Quit. Press any key to reboot]";
+temp=UpdateScreen();
+temp=GetKey();
+@switch_bank 0;
+];
+
+[SysException
+pc oper0 oper1;
+@print "[Exception PC/2=";
+@print_num pc;
+@print " OP0=";
+@print_num oper0;
+@print " OP1=";
+@print_num oper1;
+@print "]^[Press any key to reboot]";
+pc=GetKey();
+@switch_bank 0;
 ];

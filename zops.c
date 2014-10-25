@@ -117,6 +117,10 @@ int forceDynamic=0;
 int curIdx=0;
 int curX=0;
 int curY=0;
+int winXMin=0;
+int winXMax=240-1;
+int winYMin=0;
+int winYMax=320-1;
 SDL_Window *window;
 SDL_Renderer *ren;
 SDL_Texture *tex;
@@ -842,7 +846,11 @@ void process0OPInstruction()
 			stackPop(&m_stack);
 			break;
 		case 0xA: //quit
+#if !USE_BIOS
 			haltInstruction();
+#else
+			callBIOS(6,FALSE);
+#endif
 			break;
 		case 0xB: //new_line
 #if !USE_BIOS
@@ -854,7 +862,11 @@ void process0OPInstruction()
 #endif
 			break;
 		case 0xC: //show_status
+#if !USE_BIOS
 			haltInstruction();
+#else
+			callBIOS(5,FALSE);
+#endif
 			break;
 		case 0xD: //verify
 			doBranch(TRUE, m_ins.branch);
@@ -1178,6 +1190,17 @@ void process2OPInstruction()
 			{
 				screen[curIdx%(320*240)]=m_ins.operands[1].value;
 				curIdx++;
+				curX++;
+				if (curX>winXMax)
+				{
+					curX=winXMin;
+					curY++;
+					if (curY>winYMax)
+					{
+						curY=winYMin;
+					}
+					curIdx=curY*240+curX;
+				}
 			}
 			else if (m_ins.operands[0].value==0x20)
 			{
@@ -1188,6 +1211,30 @@ void process2OPInstruction()
 			{
 				curY=m_ins.operands[1].value;
 				curIdx=curY*240+curX;
+			}
+			else if (m_ins.operands[0].value==0x50)
+			{
+				winXMin=m_ins.operands[1].value;
+			}
+			else if (m_ins.operands[0].value==0x51)
+			{
+				winXMax=m_ins.operands[1].value;
+			}
+			else if (m_ins.operands[0].value==0x52)
+			{
+				winYMin=m_ins.operands[1].value;
+			}
+			else if (m_ins.operands[0].value==0x53)
+			{
+				winYMax=m_ins.operands[1].value;
+			}
+			else if (m_ins.operands[0].value==7)
+			{
+				SDL_UpdateTexture(tex, NULL, screen, 240*sizeof(screen[0]));
+				SDL_RenderClear(ren);
+				SDL_RenderCopy(ren, tex, NULL, NULL);
+				SDL_RenderPresent(ren);
+				SDL_Delay(1);
 			}
 			break;
 		case 0x1F:
@@ -1545,7 +1592,6 @@ int main(int argc, char **argv)
 		biosRAM=memAlloc(0x10000);
 		screen=memAlloc(320*240*sizeof(u16));
 		memset(biosRAM, 0, 0x10000);
-		fileSeek(&fh, 0x20000*2);
 		fileReadData(&fh, memory, size);
 		fileClose(&fh);
 		ASSERT(ReadMem(0)==3);
@@ -1554,11 +1600,11 @@ int main(int argc, char **argv)
 		m_objectTable=makeU16(ReadMem(0xA)&0xFF, ReadMem(0xB)&0xFF);
 		m_dictionaryTable=makeU16(ReadMem(0x8)&0xFF, ReadMem(0x9)&0xFF);
 		m_pc=makeU16(ReadMem(6)&0xFF, ReadMem(7)&0xFF);
-		WriteMem(1,ReadMem(1)|(1<<4)); // status line not available
-		WriteMem(1,ReadMem(1)&~(1<<5)); // screen splitting available
-		WriteMem(1,ReadMem(1)&~(1<<6)); // variable pitch font
-		WriteMem(0x10,ReadMem(0x10)|(1<<0)); // transcripting
-		WriteMem(0x10,ReadMem(0x10)|(1<<1)); // fixed font
+		//WriteMem(1,ReadMem(1)|(1<<4)); // status line not available
+		//WriteMem(1,ReadMem(1)&~(1<<5)); // screen splitting available
+		//WriteMem(1,ReadMem(1)&~(1<<6)); // variable pitch font
+		//WriteMem(0x10,ReadMem(0x10)|(1<<0)); // transcripting
+		//WriteMem(0x10,ReadMem(0x10)|(1<<1)); // fixed font
 		stackInit(&m_stack, m_numberstack, sizeof(m_numberstack[0]), ARRAY_SIZEOF(m_numberstack));
 		stackInit(&m_callStack, m_callstackcontents, sizeof(m_callstackcontents[0]), ARRAY_SIZEOF(m_callstackcontents));
 #if USE_BIOS
