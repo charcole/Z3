@@ -1,7 +1,8 @@
-module boss(clk, adcDout, data, waddress, we, pe, romCS, ramCS, led0, led1, led2, lcdCS, lcdRS, lcdReset, nadcCS, a17, a18);
+module boss(clk, adcDout, reset, data, waddress, we, pe, romCS, ramCS, led0, led1, led2, lcdCS, lcdRS, lcdReset, nadcCS, a17, a18);
 
 input clk;
 input adcDout;
+input reset;
 
 inout [7:0] data;
 
@@ -53,6 +54,9 @@ wire nadcCS;
 `define PRINTCHAR_CALLBACK	'h2
 `define PRINTNUM_CALLBACK	'h3
 `define READ_CALLBACK		'h4
+`define STATUS_CALLBACK		'h5
+`define QUIT_CALLBACK		'h6
+`define EXCEPTION_CALLBACK	'h7
 
 `define OPER_LARGE 2'b00
 `define OPER_SMALL 2'b01
@@ -197,7 +201,6 @@ reg [1:0] alphabet;
 reg [1:0] long;
 reg nextLoadIsDynamic;
 
-reg [2:0] divider;
 reg adcClk;
 reg adcDin;
 
@@ -219,7 +222,6 @@ begin
 	printEnable=0;
 	phase=0;
 	readHigh=0;
-	divider=0;
 	nextLoadIsDynamic=0;
 	adcCS=0;
 	a17=0;
@@ -234,24 +236,12 @@ assign data[6] = (writeEnable || printEnable)?dataOut[6]:((adcCS && operand[0][0
 assign data[7] = (writeEnable || printEnable)?dataOut[7]:((adcCS && operand[0][1])?1:'bZ);
 assign romCS = !(!adcCS && !printEnable && !writeEnable && !forceDynamicRead && (forceStaticRead || address[16]==1));
 assign ramCS = !(!adcCS && !printEnable && (writeEnable || forceDynamicRead || (!forceStaticRead && address[16]==0)));
-assign pe = adcCS?(operand[0][3]?0:'bZ):(!printEnable 
-`ifndef HARDWARE_PRINT
-`ifdef REAL_HARDWARE // Strobe over first part of cycle
-	|| divider[2] || divider==0
-`endif
-`endif
-);
+assign pe = adcCS?(operand[0][3]?0:'bZ):(!printEnable || !clk);
 assign we = !writeEnable;
 assign led0 = !address[12];
 assign led1 = !address[13];
 assign led2 = !address[14];
-assign lcdCS = !printEnable 
-`ifndef HARDWARE_PRINT
-`ifdef REAL_HARDWARE // Strobe over first part of cycle
-	|| divider[2] || divider==0
-`endif
-`endif
-;
+assign lcdCS = !printEnable || !clk;
 assign lcdRS = adcCS?(operand[0][2]?1:'bZ):rlcdRS;
 assign lcdReset = rlcdReset;
 assign nadcCS = !adcCS;
@@ -806,9 +796,9 @@ task DoOp;
 					`OP0_RESTART: state<=`STATE_RESET;
 					`OP0_RETPOP: Pull(1);
 					`OP0_POP: begin stackAddress<=stackAddress-2; state<=`STATE_FETCH_OP; end
-					`OP0_QUIT: begin $display("quit"); state<=`STATE_HALT; end
+					`OP0_QUIT: begin operand[0]<=`QUIT_CALLBACK; CallFunction(0,1); end
 					`OP0_NEWLINE: PrintChar(10);
-					`OP0_SHOWSTATUS: state<=`STATE_FETCH_OP;
+					`OP0_SHOWSTATUS: begin operand[0]<=`STATUS_CALLBACK; CallFunction(0,1); end
 					`OP0_VERIFY: DoBranch(1);
 					`OP0_DYNAMIC: begin nextLoadIsDynamic<=1; state<=`STATE_FETCH_OP; end
 					default: state<=`STATE_HALT;
@@ -963,10 +953,6 @@ endtask
 `endif
 
 always @ (posedge clk)
-`ifdef REAL_HARDWARE
-begin
-if (divider==0)
-`endif
 begin
 	case(state)
 		`STATE_RESET: begin
@@ -1087,42 +1073,48 @@ begin
 			operTypes[4]<=`OPER_OMIT;
 			curPC<=pc;
 			$display("Fetching op at %h", pc);
-			case (data[7:6])
-				2'b10: begin
-					// short form
-					op[4:0]<=data[3:0];
-					operTypes[0]<=data[5:4];
-					operTypes[1]<=`OPER_OMIT;
-					operTypes[2]<=`OPER_OMIT;
-					operTypes[3]<=`OPER_OMIT;
-					if (data[5:4]==2'b11) begin
-						operNum[1:0]<=`OP_0;
-						case (data[3:0])
-							`OP0_SAVE,`OP0_RESTORE,`OP0_VERIFY: state<=`STATE_READ_BRANCH;
-							default: state<=`STATE_DO_OP;
-						endcase
-					end else begin
-						operNum[1:0]<=`OP_1;
+			if (!reset) begin
+				state<=`STATE_RESET;
+				a17<=0;
+				a18<=0;
+			end else begin
+				case (data[7:6])
+					2'b10: begin
+						// short form
+						op[4:0]<=data[3:0];
+						operTypes[0]<=data[5:4];
+						operTypes[1]<=`OPER_OMIT;
+						operTypes[2]<=`OPER_OMIT;
+						operTypes[3]<=`OPER_OMIT;
+						if (data[5:4]==2'b11) begin
+							operNum[1:0]<=`OP_0;
+							case (data[3:0])
+								`OP0_SAVE,`OP0_RESTORE,`OP0_VERIFY: state<=`STATE_READ_BRANCH;
+								default: state<=`STATE_DO_OP;
+							endcase
+						end else begin
+							operNum[1:0]<=`OP_1;
+							state<=`STATE_READ_OPERS;
+						end
+					end
+					2'b11: begin
+						// variable form
+						op[4:0]<=data[4:0];
+						operNum[1:0]<=(data[5]?`OP_VAR:`OP_2);
+						state<=`STATE_READ_TYPES;
+					end
+					default: begin
+						// long form
+						op[4:0]<=data[4:0];
+						operNum[1:0]<=`OP_2;
+						operTypes[0]<=(data[6] ? `OPER_VARI : `OPER_SMALL);
+						operTypes[1]<=(data[5] ? `OPER_VARI : `OPER_SMALL);
+						operTypes[2]<=`OPER_OMIT;
+						operTypes[3]<=`OPER_OMIT;
 						state<=`STATE_READ_OPERS;
 					end
-				end
-				2'b11: begin
-					// variable form
-					op[4:0]<=data[4:0];
-					operNum[1:0]<=(data[5]?`OP_VAR:`OP_2);
-					state<=`STATE_READ_TYPES;
-				end
-				default: begin
-					// long form
-					op[4:0]<=data[4:0];
-					operNum[1:0]<=`OP_2;
-					operTypes[0]<=(data[6] ? `OPER_VARI : `OPER_SMALL);
-					operTypes[1]<=(data[5] ? `OPER_VARI : `OPER_SMALL);
-					operTypes[2]<=`OPER_OMIT;
-					operTypes[3]<=`OPER_OMIT;
-					state<=`STATE_READ_OPERS;
-				end
-			endcase
+				endcase
+			end
 			operandIdx<=0;
 			pc<=pc+1;
 			address<=pc+1;
@@ -1438,13 +1430,18 @@ begin
 `endif
 		default: begin
 			$display("HALT");
+			operand[1]<=(pc>>1);
+			operand[2]<=operand[0];
+			operand[3]<=operand[1];
+			operand[0]<=`EXCEPTION_CALLBACK;
+			operTypes[0]<=`OPER_LARGE;
+			operTypes[1]<=`OPER_LARGE;
+			operTypes[2]<=`OPER_LARGE;
+			operTypes[3]<=`OPER_LARGE;
+			CallFunction(0,1);
 		end
 	endcase
 end
-`ifdef REAL_HARDWARE
-divider<=divider+1;
-end
-`endif
 
 endmodule
 
@@ -1452,6 +1449,7 @@ module main();
 
 reg clk;
 reg adcDout;
+reg reset;
 wire [7:0] data;
 wire [16:0] address;
 wire writeEnable;
@@ -1468,7 +1466,7 @@ wire adcCS;
 wire a17;
 wire a18;
 
-integer file,readData,i,j;
+integer file,readData,i,j,numOps,cycles,stateCycles[15:0],opCycles[255:0],ops[255:0];
 reg [7:0] mem [128*1024:0];
 reg [7:0] dynamicMem [128*1024:0];
 
@@ -1482,8 +1480,18 @@ begin
 	$display("File read:%h %d", file, readData);
 	$fclose(file);
 	adcDout=0;
+	reset=1;
+	numOps=0;
+	cycles=0;
+	mem['h1E57F]=1; // Suppress game select screen as it's slow
+	for (i=0; i<16; i=i+1)
+		stateCycles[i]=0;
+	for (i=0; i<256; i=i+1) begin
+		opCycles[i]=0;
+		ops[i]=0;
+	end
 	//$monitor("%h %h %h State:%d(%d) Op:%h Num:%h OperType:%h%h%h%h OperIdx:%d Operand:%h %h Store:%h Branch:%h", clk, data, address, b.state, b.phase, b.op, b.operNum, b.operTypes[0], b.operTypes[1], b.operTypes[2], b.operTypes[3], b.operandIdx, b.operand[0], b.operand[1], b.store, b.branch);
-	for (i=0; i</*505*/80000000; i=i+1) begin
+	for (i=0; i</*505*/10000000; i=i+1) begin
 		clk=1;
 		#5 clk=0;
 		if (!ramCS && !writeEnable) begin
@@ -1515,14 +1523,35 @@ begin
 				$fwrite(file, "\n");
 			end
 			$fclose(file);
+			$display("Halt");
 			$finish;
 		end
-		$display("Mem req: %h WE:%d PE:%d%d%d%d RoS:%d RaS:%d D:%h LEDs:%d%d%d ADC:%d%d%d%d%d%d%d", address, !writeEnable, printEnable, lcdCS, lcdRS, lcdReset, !romCS, !ramCS, data, !led0, !led1, !led2, !adcCS, address[0], address[1], lcdRS, printEnable, data[7], data[6]);
+		if (b.operNum==`OP_VAR && b.op==`OPVAR_GETTOUCH)
+			i=10000000;
+		//if (b.curPC<'h1e000)
+		begin
+			if (b.state==`STATE_FETCH_OP) begin
+				ops[b.op+(32*b.operNum)]=ops[b.op+(32*b.operNum)]+1;
+				numOps=numOps+1;
+			end
+			if (b.state!=`STATE_RESET) begin
+				cycles=cycles+1;
+				opCycles[b.op+(32*b.operNum)]=opCycles[b.op+(32*b.operNum)]+1;
+			end
+			stateCycles[b.state]=stateCycles[b.state]+1;
+		end
+		$display("Mem req: %h WE:%d PE:%d%d%d%d RoS:%d RaS:%d D:%h LEDs:%d%d%d ADC:%d%d%d%d%d%d%d Ops:%d/%d", address, !writeEnable, printEnable, lcdCS, lcdRS, lcdReset, !romCS, !ramCS, data, !led0, !led1, !led2, !adcCS, address[0], address[1], lcdRS, printEnable, data[7], data[6], numOps, cycles);
 	end
+	for (i=0; i<16; i=i+1)
+		if (stateCycles[i]>0)
+			$display("State:%d %d", i, stateCycles[i]);
+	for (i=0; i<256; i=i+1)
+		if (opCycles[i]>0)
+			$display("OpCyc:%d/%d %d/%d=%d", i/32, i%32, opCycles[i], ops[i], opCycles[i]/ops[i]);
 	$finish;
 end
 
-boss b(clk, adcDout, data, address, writeEnable, printEnable, romCS, ramCS, led0, led1, led2, lcdCS, lcdRS, lcdReset, adcCS, a17, a18);
+boss b(clk, adcDout, reset, data, address, writeEnable, printEnable, romCS, ramCS, led0, led1, led2, lcdCS, lcdRS, lcdReset, adcCS, a17, a18);
 
 endmodule
 

@@ -80,12 +80,10 @@
 4406 (96%)		- New relocatable BIOS
 
 4545 (99%)		- Touch screen reading (maybe buggy)
+4548 (99%)		- Reset switch (and working touch screen)
 
 Todo:
-- Reset button (hardware)
-- Text input method (Touchscreen or PS/2) (software+hardware)
-- Work out why ADC doesn't read Vpp properly
-- Smooth scrolling / paging (Software)
+- Paging (Software)
 
 
 Touch screen
