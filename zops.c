@@ -105,6 +105,8 @@ static int m_abbrevTable;
 static int m_objectTable;
 static int m_dictionaryTable;
 static int m_memSize;
+static int m_memOffset;
+static byte *rom;
 static byte *memory;
 static byte *biosRAM;
 static u16 *screen;
@@ -130,19 +132,19 @@ int mouseY=0;
 
 byte ReadMem(int addr)
 {
-	return memory[addr];
+	return memory[addr+m_memOffset];
 }
 
 void WriteMem(int addr, byte val)
 {
-	memory[addr]=val;
+	memory[addr+m_memOffset]=val;
 }
 
 byte ReadMemDyn(int addr)
 {
 	if (addr>=0x10000 && forceDynamic)
 		return biosRAM[addr-0x10000];
-	return memory[addr];
+	return memory[addr+m_memOffset];
 }
 
 void displayState();
@@ -161,7 +163,7 @@ void WriteMemDyn(int addr, byte val)
 	}
 	else
 	{
-		memory[addr]=val;
+		memory[addr+m_memOffset]=val;
 	}
 }
 
@@ -780,6 +782,28 @@ int lexicalAnalysis(char* input, int parseBuffer, int maxEntries)
 	return MIN(maxEntries, numTokens);
 }
 
+void restart()
+{
+	memcpy(memory, rom, m_memSize);
+	memset(biosRAM, 0, 0x10000);
+	ASSERT(ReadMem(0)==3);
+	m_globalVariables=makeU16(ReadMem(0xC)&0xFF, ReadMem(0xD)&0xFF);
+	m_abbrevTable=makeU16(ReadMem(0x18)&0xFF, ReadMem(0x19)&0xFF);
+	m_objectTable=makeU16(ReadMem(0xA)&0xFF, ReadMem(0xB)&0xFF);
+	m_dictionaryTable=makeU16(ReadMem(0x8)&0xFF, ReadMem(0x9)&0xFF);
+	m_pc=makeU16(ReadMem(6)&0xFF, ReadMem(7)&0xFF);
+	//WriteMem(1,ReadMem(1)|(1<<4)); // status line not available
+	//WriteMem(1,ReadMem(1)&~(1<<5)); // screen splitting available
+	//WriteMem(1,ReadMem(1)&~(1<<6)); // variable pitch font
+	//WriteMem(0x10,ReadMem(0x10)|(1<<0)); // transcripting
+	//WriteMem(0x10,ReadMem(0x10)|(1<<1)); // fixed font
+	stackInit(&m_stack, m_numberstack, sizeof(m_numberstack[0]), ARRAY_SIZEOF(m_numberstack));
+	stackInit(&m_callStack, m_callstackcontents, sizeof(m_callstackcontents[0]), ARRAY_SIZEOF(m_callstackcontents));
+#if USE_BIOS
+	callBIOS(0,FALSE);
+#endif
+}
+
 void process0OPInstruction()
 {
 	switch (m_ins.op)
@@ -837,7 +861,7 @@ void process0OPInstruction()
 			doBranch(FALSE, m_ins.branch);
 			break;
 		case 7: //restart
-			haltInstruction();
+			restart();
 			break;
 		case 8: //ret_popped
 			returnRoutine(*(int*)stackPop(&m_stack));
@@ -941,7 +965,8 @@ void process1OPInstruction()
 #endif
 			break;
 		case 8: //call_1s
-			illegalInstruction();
+			m_memOffset=(m_ins.operands[0].value&3)*0x20000;
+			restart();
 			break;
 		case 9: //remove_obj
 			{
@@ -1566,7 +1591,7 @@ int main(int argc, char **argv)
 	}
 	else if (fileOpen(&fh, argv[1], TRUE))
 	{
-		int size=fileSize(&fh);
+		m_memSize=fileSize(&fh);
 
 		SDL_Init(SDL_INIT_VIDEO);
 		window = SDL_CreateWindow("TFTLCD",SDL_WINDOWPOS_UNDEFINED,SDL_WINDOWPOS_UNDEFINED,240,320,SDL_WINDOW_SHOWN);
@@ -1588,28 +1613,13 @@ int main(int argc, char **argv)
 			return 1;
 		}
 
-		memory=memAlloc(size);
+		rom=memAlloc(m_memSize);
+		memory=memAlloc(m_memSize);
 		biosRAM=memAlloc(0x10000);
 		screen=memAlloc(320*240*sizeof(u16));
-		memset(biosRAM, 0, 0x10000);
-		fileReadData(&fh, memory, size);
+		fileReadData(&fh, rom, m_memSize);
 		fileClose(&fh);
-		ASSERT(ReadMem(0)==3);
-		m_globalVariables=makeU16(ReadMem(0xC)&0xFF, ReadMem(0xD)&0xFF);
-		m_abbrevTable=makeU16(ReadMem(0x18)&0xFF, ReadMem(0x19)&0xFF);
-		m_objectTable=makeU16(ReadMem(0xA)&0xFF, ReadMem(0xB)&0xFF);
-		m_dictionaryTable=makeU16(ReadMem(0x8)&0xFF, ReadMem(0x9)&0xFF);
-		m_pc=makeU16(ReadMem(6)&0xFF, ReadMem(7)&0xFF);
-		//WriteMem(1,ReadMem(1)|(1<<4)); // status line not available
-		//WriteMem(1,ReadMem(1)&~(1<<5)); // screen splitting available
-		//WriteMem(1,ReadMem(1)&~(1<<6)); // variable pitch font
-		//WriteMem(0x10,ReadMem(0x10)|(1<<0)); // transcripting
-		//WriteMem(0x10,ReadMem(0x10)|(1<<1)); // fixed font
-		stackInit(&m_stack, m_numberstack, sizeof(m_numberstack[0]), ARRAY_SIZEOF(m_numberstack));
-		stackInit(&m_callStack, m_callstackcontents, sizeof(m_callstackcontents[0]), ARRAY_SIZEOF(m_callstackcontents));
-#if USE_BIOS
-		callBIOS(0,FALSE);
-#endif
+		restart();
 		while (1)
 		{
 			executeInstruction();
