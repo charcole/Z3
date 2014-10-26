@@ -272,17 +272,10 @@ task StoreRegisterAndBranch;
 	input doBranch;
 	begin
 		state<=`STATE_STORE_REGISTER;
-		delayedRegNum<=regNum;
+		store<=regNum;
 		returnValue<=value;
 		delayedBranch<=doBranch;
 		phase<=0;
-	end
-endtask
-
-task StoreResult;
-	input [15:0] result;
-	begin
-		StoreRegisterAndBranch(store, result, negate); // negate means won't branch
 	end
 endtask
 
@@ -290,7 +283,34 @@ task StoreResultAndBranch;
 	input [15:0] result;
 	input doBranch;
 	begin
-		StoreRegisterAndBranch(store, result, doBranch);
+		if (store>=16) begin
+			address<=globalsAddress+2*(store-16);
+		end else if (store==0) begin
+			address<=stackAddress;
+			stackAddress<=stackAddress+2;
+		end else begin
+			address<=csStack+7+2*(store-1);
+		end
+		dataOut<=result[15:8];
+		writeEnable<=1;
+		state<=`STATE_STORE_REGISTER;
+		returnValue[7:0]<=result[7:0];
+		delayedBranch<=doBranch;
+		phase<=1;
+	end
+endtask
+
+task StoreResult;
+	input [15:0] result;
+	begin
+		StoreResultAndBranch(result, negate); // negate means won't branch
+	end
+endtask
+
+task StoreResultSlow;
+	input [15:0] result;
+	begin
+		StoreRegisterAndBranch(store, result, negate); // negate means won't branch
 	end
 endtask
 
@@ -350,7 +370,7 @@ task LoadAndStore;
 			phase<=phase+1;
 		end else begin
 			forceDynamicRead<=0;
-			StoreResult((temp[7:0]<<8)|data);
+			StoreResultSlow((temp[7:0]<<8)|data);
 		end
 	end
 endtask
@@ -436,7 +456,7 @@ task FindProp;
 				end
 		   	end
 			5: begin temp[7:0]<=data; address<=address+1; phase<=phase+1; end
-			default: begin StoreResult((temp[7:0]<<8)|data); end
+			default: begin StoreResultSlow((temp[7:0]<<8)|data); end
 		endcase
 	end
 endtask
@@ -485,9 +505,9 @@ task FindPropAddrLen;
 			3: begin address<=address+2*data+1; phase<=phase+1; end
 			default: begin
 				if (data==0) begin	// end of search
-					StoreResult(0);
+					StoreResultSlow(0);
 				end else if (data[4:0]==operand[1]) begin // found property
-					StoreResult(address+1);
+					StoreResultSlow(address+1);
 				end else begin // skip over data
 					address<=address+data[7:5]+2;
 				end
@@ -505,7 +525,7 @@ task FindNextProp;
 			3: begin address<=address+2*data+1; phase<=phase+1; end
 			default: begin
 				if (operand[1]==0)
-					StoreResult(data[4:0]);
+					StoreResultSlow(data[4:0]);
 `ifndef REAL_HARDWARE
 				else if (data==0)	// end of search
 					state<=`STATE_HALT;
@@ -525,7 +545,7 @@ task GetPropLen;
 		if (phase==0) begin
 			address<=operand[0]-1; phase<=phase+1;
 		end else begin
-			StoreResult((operand[0]==0)?0:(data[7:5]+1));
+			StoreResultSlow((operand[0]==0)?0:(data[7:5]+1));
 		end
 	end
 endtask
@@ -775,7 +795,7 @@ task GetTouch;
 					phase<=1;
 				end
 			end
-			default: begin adcCS<=0; StoreResult(operand[1]&'h3FF); end
+			default: begin adcCS<=0; StoreResultSlow(operand[1]&'h3FF); end
 		endcase
 	end
 endtask
@@ -873,7 +893,7 @@ task DoOp;
 						$display("PC:%h Doing opvar:%d Operands:%h %h %h %h Store:%h Branch:%h/%d/%h", curPC, op, operand[0], operand[1], operand[2], operand[3], store, branch, negate, $signed(pc)+$signed(branch-2));
 				end
 				case (op)
-					`OPVAR_CALL: if (operand[0]==0) StoreResult(0); else CallFunction(0, 0);
+					`OPVAR_CALL: if (operand[0]==0) StoreResultSlow(0); else CallFunction(0, 0);
 					`OPVAR_STOREW: StoreW();
 					`OPVAR_STOREB: StoreB();
 					`OPVAR_PUTPROP: SetProp();
@@ -1211,9 +1231,9 @@ begin
 							operand[operandIdx]<=operand[operandIdx]|data;
 							address<=pc;
 							operandIdx<=operandIdx+1;
-							phase<=0;
 							if (operTypes[operandIdx+1]==`OPER_OMIT)
 								FinishReadingOps();
+							phase<=0;
 						end
 					endcase
 				end
@@ -1289,13 +1309,13 @@ begin
 		`STATE_STORE_REGISTER: begin
 			case (phase)
 				0: begin
-					if (delayedRegNum>=16) begin
-						address<=globalsAddress+2*(delayedRegNum-16);
-					end else if (delayedRegNum==0) begin
+					if (store>=16) begin
+						address<=globalsAddress+2*(store-16);
+					end else if (store==0) begin
 						address<=stackAddress;
 						stackAddress<=stackAddress+2;
 					end else begin
-						address<=csStack+7+2*(delayedRegNum-1);
+						address<=csStack+7+2*(store-1);
 					end
 					dataOut<=returnValue[15:8];
 					writeEnable<=1;
@@ -1366,7 +1386,7 @@ begin
 					end
 				end
 				default: begin
-					StoreResult(delayedBranch?(operand[1]+delayedRegNum):operand[0]);
+					StoreResultSlow(delayedBranch?(operand[1]+delayedRegNum):operand[0]);
 				end
 			endcase
 		end
