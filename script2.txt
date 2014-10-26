@@ -1,0 +1,387 @@
+N
+N
+U
+Get egg
+D
+S
+E
+Open window
+W
+Open sack
+Get garlic
+W
+Get lamp
+E
+U
+Light lamp
+Get rope
+Get knife
+D
+Douse lamp
+W
+Get sword
+Move rug
+Open trapdoor
+D
+Light lamp
+N
+Kill troll with sword
+E
+E
+Se
+E
+Tie rope to railing
+D
+Douse lamp
+Get torch
+D
+S
+Drop sword
+Get candels
+Douse candels
+Give egg to thief
+Get book
+N
+Get bell
+E
+Open coffin
+Get sceptre
+W
+S
+Pray
+E
+S
+E
+W
+W
+Read book
+Turn page
+Drop all except torch and lamp
+Open trapdoor
+D
+N
+E
+E
+Se
+E
+D
+D
+D
+Get coffin
+U
+S
+Pray
+E
+S
+E
+W
+W
+Open case
+Put coffin in case
+Get book
+Get bell
+Get candles
+D
+S
+E
+Get painting
+W
+N
+N
+E
+E
+E
+Echo
+Get bar
+U
+E
+N
+Drop painting
+Get matchbook
+S
+S
+D
+W
+S
+S
+E
+D
+Ring bell
+Get candles
+Light match
+Light candles with match
+Read prayer
+Drop matchbook
+Drop candles
+Drop book
+S
+get skull
+N
+U
+N
+N
+N
+W
+W
+S
+U
+Put skull in case
+Put bar in case
+D
+N
+W
+W
+W
+U
+Get knife and bag
+Sw
+E
+S
+Se
+Odysseus
+E
+E
+Put bag in case
+Drop rusty knife
+D
+N
+E
+E
+N
+Ne
+E
+D
+Get pile
+U
+N
+N
+Get screwdriver
+Get wrench
+Press red button
+Press yellow button
+S
+S
+Turn bolt with wrench
+Drop wrench
+W
+W
+E
+N
+Get trunk
+S
+Sw
+S
+S
+W
+W
+S
+U
+Put trunk in case
+Drop pile
+Drop screwdriver
+D
+N
+E
+E
+S
+S
+Touch mirror
+E
+D
+Get trident
+S
+Get pump
+S
+S
+Sw
+S
+S
+W
+W
+S
+U
+Put trident in case
+Get sceptre
+Get pile
+D
+N
+E
+E
+E
+E
+E
+Drop pile
+Inflate pile
+Drop pump
+Get label
+Read label
+Drop label
+Throw sceptre in boat
+Enter boat
+Launch
+Get scpetre
+Wait
+Get buoy
+Wait
+Land
+Get out of boat
+N
+Open buoy
+Get emerald
+Drop buoy
+Get shovel
+Ne
+Dig sand
+Dig sand
+Dig sand
+Dig sand
+Drop shovel
+Get scarab
+Sw
+S
+S
+Wave sceptre
+W
+W
+Get pot
+Sw
+U
+U
+Nw
+W
+W
+W
+Put sceptre in case
+Put pot in case
+Put emerald in case
+Put scarab in case
+Get rusty knife
+Get nasty knife
+W
+W
+U
+Kill thief with nasty knife
+Get painting
+Get egg
+Drop rusty knife
+Drop nasty knife
+Get chalice
+D
+E
+E
+Put painting in case
+Get canary
+Put chalice in case
+Put egg in case
+E
+E
+N
+N
+E
+Wind canary
+Get bauble
+W
+S
+E
+W
+W
+Put canary in case
+Put bauble in case
+Get screwdriver
+Get garlic
+D
+N
+E
+E
+S
+S
+Touch mirror
+N
+W
+N
+W
+N
+E
+Put torch in basket
+Put screwdriver in basket
+Light lamp
+N
+D
+E
+Ne
+Se
+Sw
+D
+D
+S
+Get coal
+N
+U
+U
+N
+E
+S
+N
+U
+S
+Put coal in basket
+Lower basket
+N
+D
+E
+Ne
+Se
+Sw
+D
+D
+W
+Drop all
+W
+Get all from basket
+S
+Open lid
+Put coal in machine
+Close lid
+Turn switch with screwdriver
+Open lid
+Get diamond
+N
+Put diamond in basket
+Put torch in basket
+E
+Get lamp
+Get garlic
+E
+U
+U
+N
+E
+S
+N
+Get bracelet
+U
+S
+Raise basket
+Get all from basket
+W
+Get figurine
+S
+E
+S
+D
+Drop garlic
+U
+Put diamond in case
+Put torch in case
+Put bracelet in case
+Put figurine in case
+Look
+Get map
+Examine map
+E
+E
+N
+W
+Sw
+W
+ 

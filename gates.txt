@@ -81,6 +81,7 @@
 
 4545 (99%)		- Touch screen reading (maybe buggy)
 4548 (99%)		- Reset switch (and working touch screen)
+4495 (98%)		- Removed wasted cycle when fetching ops
 
 Todo:
 - Paging (Software)

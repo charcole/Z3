@@ -952,6 +952,36 @@ task DoPrint;
 endtask
 `endif
 
+task FinishReadingOps;
+begin
+	case (operNum)
+		`OP_1: begin
+			case (op[4:0])
+				`OP1_INC, `OP1_DEC, `OP1_LOAD: state<=`STATE_READ_INDIRECT;
+				`OP1_GETSIBLING,`OP1_GETCHILD,`OP1_GETPARENT,`OP1_GETPROPLEN,`OP1_NOT: state<=`STATE_READ_STORE;
+				`OP1_JZ: state<=`STATE_READ_BRANCH;
+				default: state<=`STATE_DO_OP;
+			endcase
+		end
+		`OP_2: begin
+			case (op[4:0])
+				`OP2_INC_CHK,`OP2_DEC_CHK: state<=`STATE_READ_INDIRECT;
+				`OP2_OR,`OP2_AND,`OP2_LOADW,`OP2_LOADB,`OP2_GETPROP,`OP2_GETPROPADDR,`OP2_GETNEXTPROP,`OP2_ADD,`OP2_SUB,`OP2_MUL,`OP2_DIV,`OP2_MOD: state<=`STATE_READ_STORE;
+				`OP2_JE,`OP2_JL,`OP2_JG,`OP2_JIN,`OP2_TEST,`OP2_TESTATTR: state<=`STATE_READ_BRANCH;
+				default: state<=`STATE_DO_OP;
+			endcase
+		end
+		`OP_VAR: begin
+			case (op[4:0])
+				`OPVAR_CALL,`OPVAR_RANDOM,`OPVAR_GETTOUCH: state<=`STATE_READ_STORE;
+				default: state<=`STATE_DO_OP;
+			endcase
+		end
+		default: state<=`STATE_DO_OP;
+	endcase
+end
+endtask
+
 always @ (posedge clk)
 begin
 	case(state)
@@ -1095,40 +1125,23 @@ begin
 						end else begin
 							operNum[1:0]<=`OP_1;
 							state<=`STATE_READ_OPERS;
-							case (data[3:0])
-								`OP1_INC, `OP1_DEC, `OP1_LOAD: store<=`STATE_READ_INDIRECT;
-								`OP1_GETSIBLING,`OP1_GETCHILD,`OP1_GETPARENT,`OP1_GETPROPLEN,`OP1_NOT: store<=`STATE_READ_STORE;
-								`OP1_JZ: store<=`STATE_READ_BRANCH;
-								default: store<=`STATE_DO_OP;
-							endcase
 						end
 					end
-					default: begin
+					2'b11: begin
+						// variable form
 						op[4:0]<=data[4:0];
-						if (data[7:6]==2'b11 && data[5]) begin
-							operNum[1:0]<=`OP_VAR;
-							case (data[4:0])
-								`OPVAR_CALL,`OPVAR_RANDOM,`OPVAR_GETTOUCH: store<=`STATE_READ_STORE;
-								default: store<=`STATE_DO_OP;
-							endcase
-						end else begin
-							operNum[1:0]<=`OP_2;
-							case (data[4:0])
-								`OP2_INC_CHK,`OP2_DEC_CHK: store<=`STATE_READ_INDIRECT;
-								`OP2_OR,`OP2_AND,`OP2_LOADW,`OP2_LOADB,`OP2_GETPROP,`OP2_GETPROPADDR,`OP2_GETNEXTPROP,`OP2_ADD,`OP2_SUB,`OP2_MUL,`OP2_DIV,`OP2_MOD: store<=`STATE_READ_STORE;
-								`OP2_JE,`OP2_JL,`OP2_JG,`OP2_JIN,`OP2_TEST,`OP2_TESTATTR: store<=`STATE_READ_BRANCH;
-								default: store<=`STATE_DO_OP;
-							endcase
-						end
-						if (data[7:6]==2'b11) begin
-							state<=`STATE_READ_TYPES;
-						end else begin
-							state<=`STATE_READ_OPERS;
-						end
+						operNum[1:0]<=(data[5]?`OP_VAR:`OP_2);
+						state<=`STATE_READ_TYPES;
+					end
+					default: begin
+						// long form
+						op[4:0]<=data[4:0];
+						operNum[1:0]<=`OP_2;
 						operTypes[0]<=(data[6] ? `OPER_VARI : `OPER_SMALL);
 						operTypes[1]<=(data[5] ? `OPER_VARI : `OPER_SMALL);
 						operTypes[2]<=`OPER_OMIT;
 						operTypes[3]<=`OPER_OMIT;
+						state<=`STATE_READ_OPERS;
 					end
 				endcase
 			end
@@ -1141,12 +1154,12 @@ begin
 			operTypes[1]<=data[5:4];
 			operTypes[2]<=data[3:2];
 			operTypes[3]<=data[1:0];
-			if (data[7:6]==`OPER_OMIT)
-				state<=store;
-			else
-				state<=`STATE_READ_OPERS;
 			pc<=pc+1;
 			address<=pc+1;
+			if (data[7:6]==`OPER_OMIT)
+				FinishReadingOps();
+			else
+				state<=`STATE_READ_OPERS;
 		end
 		`STATE_READ_OPERS: begin
 			case (operTypes[operandIdx])
@@ -1156,7 +1169,7 @@ begin
 					address<=pc+1;
 					operandIdx<=operandIdx+1;
 					if (operTypes[operandIdx+1]==`OPER_OMIT)
-						state<=store;
+						FinishReadingOps();
 				end
 				`OPER_LARGE: begin
 					if (!readHigh) begin
@@ -1167,12 +1180,12 @@ begin
 						operandIdx<=operandIdx+1;
 						readHigh<=0;
 						if (operTypes[operandIdx+1]==`OPER_OMIT)
-							state<=store;
+							FinishReadingOps();
 					end
 					pc<=pc+1;
 					address<=pc+1;
 				end
-				`OPER_VARI: begin
+				default: begin // OPER_VARI
 					case (phase)
 						0: begin
 							if (data>=16) begin
@@ -1200,13 +1213,9 @@ begin
 							operandIdx<=operandIdx+1;
 							phase<=0;
 							if (operTypes[operandIdx+1]==`OPER_OMIT)
-								state<=store;
+								FinishReadingOps();
 						end
 					endcase
-				end
-				`OPER_OMIT: begin
-					$display("Read opers shouldn't get to OPER_OMIT\n");
-					$finish;
 				end
 			endcase
 		end
@@ -1507,28 +1516,8 @@ begin
 		end
 `endif
 		if (b.state==`STATE_HALT) begin
-			file=$fopen("ram.dat", "wb");
-			for (i=0; i<'h20000; i=i+16) begin
-				$fwrite(file, "%05h: ", i);
-				for (j=0; j<16; j=j+2)
-					$fwrite(file, "%02x%02x ", dynamicMem[i+j][7:0], dynamicMem[i+j+1][7:0]);
-				for (j=0; j<16; j=j+1)
-					$fwrite(file, "%c", (dynamicMem[i+j][7:0]>=32)?dynamicMem[i+j][7:0]:46);
-				$fwrite(file, "\n");
-			end
-			$fwrite(file, "\nBitmap:\n");
-			for (i='h1b500; i<'h20000; i=i+30) begin
-				for (j=0; j<30; j=j+1)
-					$fwrite(file, "%d%d%d%d%d%d%d%d",
-						dynamicMem[i+j][7], dynamicMem[i+j][6],
-						dynamicMem[i+j][5], dynamicMem[i+j][4],
-						dynamicMem[i+j][3], dynamicMem[i+j][2],
-						dynamicMem[i+j][1], dynamicMem[i+j][0]);
-				$fwrite(file, "\n");
-			end
-			$fclose(file);
 			$display("Halt");
-			$finish;
+			i=10000000;
 		end
 		if (b.operNum==`OP_VAR && b.op==`OPVAR_GETTOUCH && b.phase==0 && b.state==`STATE_DO_OP) begin
 			b.phase=3;
@@ -1542,6 +1531,9 @@ begin
 				'h1A: b.operand[1]=touchY;
 				default: begin $display("Bad touch"); $finish; end
 			endcase
+		end
+		if (b.operNum==`OP_VAR && b.op==`OPVAR_BLIT1 && b.phase==0 && b.state==`STATE_DO_OP) begin
+			b.operand[1]=1;
 		end
 		//if (b.curPC<'h1e000)
 		begin
@@ -1563,6 +1555,26 @@ begin
 	for (i=0; i<256; i=i+1)
 		if (opCycles[i]>0)
 			$display("OpCyc:%d/%d %d/%d=%d", i/32, i%32, opCycles[i], ops[i], opCycles[i]/ops[i]);
+	file=$fopen("ram.dat", "wb");
+	for (i=0; i<'h20000; i=i+16) begin
+		$fwrite(file, "%05h: ", i);
+		for (j=0; j<16; j=j+2)
+			$fwrite(file, "%02x%02x ", dynamicMem[i+j][7:0], dynamicMem[i+j+1][7:0]);
+		for (j=0; j<16; j=j+1)
+			$fwrite(file, "%c", (dynamicMem[i+j][7:0]>=32)?dynamicMem[i+j][7:0]:46);
+		$fwrite(file, "\n");
+	end
+	$fwrite(file, "\nBitmap:\n");
+	for (i='h1b500; i<'h20000; i=i+30) begin
+		for (j=0; j<30; j=j+1)
+			$fwrite(file, "%d%d%d%d%d%d%d%d",
+		dynamicMem[i+j][7], dynamicMem[i+j][6],
+		dynamicMem[i+j][5], dynamicMem[i+j][4],
+		dynamicMem[i+j][3], dynamicMem[i+j][2],
+		dynamicMem[i+j][1], dynamicMem[i+j][0]);
+		$fwrite(file, "\n");
+	end
+	$fclose(file);
 	$fclose(touch);
 	$finish;
 end
