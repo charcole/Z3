@@ -1095,23 +1095,40 @@ begin
 						end else begin
 							operNum[1:0]<=`OP_1;
 							state<=`STATE_READ_OPERS;
+							case (data[3:0])
+								`OP1_INC, `OP1_DEC, `OP1_LOAD: store<=`STATE_READ_INDIRECT;
+								`OP1_GETSIBLING,`OP1_GETCHILD,`OP1_GETPARENT,`OP1_GETPROPLEN,`OP1_NOT: store<=`STATE_READ_STORE;
+								`OP1_JZ: store<=`STATE_READ_BRANCH;
+								default: store<=`STATE_DO_OP;
+							endcase
 						end
 					end
-					2'b11: begin
-						// variable form
-						op[4:0]<=data[4:0];
-						operNum[1:0]<=(data[5]?`OP_VAR:`OP_2);
-						state<=`STATE_READ_TYPES;
-					end
 					default: begin
-						// long form
 						op[4:0]<=data[4:0];
-						operNum[1:0]<=`OP_2;
+						if (data[7:6]==2'b11 && data[5]) begin
+							operNum[1:0]<=`OP_VAR;
+							case (data[4:0])
+								`OPVAR_CALL,`OPVAR_RANDOM,`OPVAR_GETTOUCH: store<=`STATE_READ_STORE;
+								default: store<=`STATE_DO_OP;
+							endcase
+						end else begin
+							operNum[1:0]<=`OP_2;
+							case (data[4:0])
+								`OP2_INC_CHK,`OP2_DEC_CHK: store<=`STATE_READ_INDIRECT;
+								`OP2_OR,`OP2_AND,`OP2_LOADW,`OP2_LOADB,`OP2_GETPROP,`OP2_GETPROPADDR,`OP2_GETNEXTPROP,`OP2_ADD,`OP2_SUB,`OP2_MUL,`OP2_DIV,`OP2_MOD: store<=`STATE_READ_STORE;
+								`OP2_JE,`OP2_JL,`OP2_JG,`OP2_JIN,`OP2_TEST,`OP2_TESTATTR: store<=`STATE_READ_BRANCH;
+								default: store<=`STATE_DO_OP;
+							endcase
+						end
+						if (data[7:6]==2'b11) begin
+							state<=`STATE_READ_TYPES;
+						end else begin
+							state<=`STATE_READ_OPERS;
+						end
 						operTypes[0]<=(data[6] ? `OPER_VARI : `OPER_SMALL);
 						operTypes[1]<=(data[5] ? `OPER_VARI : `OPER_SMALL);
 						operTypes[2]<=`OPER_OMIT;
 						operTypes[3]<=`OPER_OMIT;
-						state<=`STATE_READ_OPERS;
 					end
 				endcase
 			end
@@ -1124,7 +1141,10 @@ begin
 			operTypes[1]<=data[5:4];
 			operTypes[2]<=data[3:2];
 			operTypes[3]<=data[1:0];
-			state<=`STATE_READ_OPERS;
+			if (data[7:6]==`OPER_OMIT)
+				state<=store;
+			else
+				state<=`STATE_READ_OPERS;
 			pc<=pc+1;
 			address<=pc+1;
 		end
@@ -1135,6 +1155,8 @@ begin
 					pc<=pc+1;
 					address<=pc+1;
 					operandIdx<=operandIdx+1;
+					if (operTypes[operandIdx+1]==`OPER_OMIT)
+						state<=store;
 				end
 				`OPER_LARGE: begin
 					if (!readHigh) begin
@@ -1144,6 +1166,8 @@ begin
 						operand[operandIdx][7:0]<=data[7:0];
 						operandIdx<=operandIdx+1;
 						readHigh<=0;
+						if (operTypes[operandIdx+1]==`OPER_OMIT)
+							state<=store;
 					end
 					pc<=pc+1;
 					address<=pc+1;
@@ -1169,42 +1193,20 @@ begin
 							address<=address+1;
 							phase<=phase+1;
 						end
-						2: begin
+						default: begin
 							forceDynamicRead<=0;
 							operand[operandIdx]<=operand[operandIdx]|data;
 							address<=pc;
 							operandIdx<=operandIdx+1;
 							phase<=0;
+							if (operTypes[operandIdx+1]==`OPER_OMIT)
+								state<=store;
 						end
 					endcase
 				end
 				`OPER_OMIT: begin
-					case (operNum)
-						`OP_1: begin
-							case (op[4:0])
-								`OP1_INC, `OP1_DEC, `OP1_LOAD: state<=`STATE_READ_INDIRECT;
-								`OP1_GETSIBLING,`OP1_GETCHILD,`OP1_GETPARENT,`OP1_GETPROPLEN,`OP1_NOT: state<=`STATE_READ_STORE;
-								`OP1_JZ: state<=`STATE_READ_BRANCH;
-								default: state<=`STATE_DO_OP;
-							endcase
-						end
-						`OP_2: begin
-							case (op[4:0])
-								`OP2_INC_CHK,`OP2_DEC_CHK: state<=`STATE_READ_INDIRECT;
-								`OP2_OR,`OP2_AND,`OP2_LOADW,`OP2_LOADB,`OP2_GETPROP,`OP2_GETPROPADDR,`OP2_GETNEXTPROP,`OP2_ADD,`OP2_SUB,`OP2_MUL,`OP2_DIV,`OP2_MOD: state<=`STATE_READ_STORE;
-								`OP2_JE,`OP2_JL,`OP2_JG,`OP2_JIN,`OP2_TEST,`OP2_TESTATTR: state<=`STATE_READ_BRANCH;
-								default: state<=`STATE_DO_OP;
-							endcase
-						end
-						`OP_VAR: begin
-							case (op[4:0])
-								`OPVAR_CALL,`OPVAR_RANDOM,`OPVAR_GETTOUCH: state<=`STATE_READ_STORE;
-								default: state<=`STATE_DO_OP;
-							endcase
-						end
-						default: state<=`STATE_DO_OP;
-					endcase
-					address<=pc;
+					$display("Read opers shouldn't get to OPER_OMIT\n");
+					$finish;
 				end
 			endcase
 		end
@@ -1467,6 +1469,7 @@ wire a17;
 wire a18;
 
 integer file,readData,i,j,numOps,cycles,stateCycles[15:0],opCycles[255:0],ops[255:0];
+integer touch,touchX, touchY, touchZ;
 reg [7:0] mem [128*1024:0];
 reg [7:0] dynamicMem [128*1024:0];
 
@@ -1479,6 +1482,7 @@ begin
 	readData=$fread(mem, file);
 	$display("File read:%h %d", file, readData);
 	$fclose(file);
+	touch=$fopen("touch.txt","r");
 	adcDout=0;
 	reset=1;
 	numOps=0;
@@ -1526,8 +1530,19 @@ begin
 			$display("Halt");
 			$finish;
 		end
-		if (b.operNum==`OP_VAR && b.op==`OPVAR_GETTOUCH)
-			i=10000000;
+		if (b.operNum==`OP_VAR && b.op==`OPVAR_GETTOUCH && b.phase==0 && b.state==`STATE_DO_OP) begin
+			b.phase=3;
+			if ($fscanf(touch, "%d %d %d", touchX, touchY, touchZ)==-1) begin
+				i=10000000;
+			end
+			$display("Read: %d %d %d", touchX, touchY, touchZ);
+			case (b.operand[0])
+				'h93: b.operand[1]=touchZ;
+				'h95: b.operand[1]=touchX;
+				'h1A: b.operand[1]=touchY;
+				default: begin $display("Bad touch"); $finish; end
+			endcase
+		end
 		//if (b.curPC<'h1e000)
 		begin
 			if (b.state==`STATE_FETCH_OP) begin
@@ -1548,6 +1563,7 @@ begin
 	for (i=0; i<256; i=i+1)
 		if (opCycles[i]>0)
 			$display("OpCyc:%d/%d %d/%d=%d", i/32, i%32, opCycles[i], ops[i], opCycles[i]/ops[i]);
+	$fclose(touch);
 	$finish;
 end
 
