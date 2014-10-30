@@ -192,7 +192,7 @@ reg [15:0] returnValue;
 reg [6:0] opsToRead;
 reg [6:0] currentLocal; 
 reg [16:0] csStack;
-reg [16:0] stackAddress;
+reg [15:0] stackAddress;
 
 reg [16:0] temp;
 reg [15:0] random;
@@ -254,7 +254,7 @@ assign nadcCS = !adcCS;
 task StoreB;
 	begin
 		if (phase==0) begin
-			nextLoadIsDynamic<=0; address<=operand[0]+operand[1]; writeEnable<=1; dataOut<=operand[2][7:0]; phase<=phase+1;
+			cachedReg<=15; nextLoadIsDynamic<=0; address<=operand[0]+operand[1]; writeEnable<=1; dataOut<=operand[2][7:0]; phase<=phase+1;
 		end else begin
 			address<=pc; writeEnable<=0; state<=`STATE_FETCH_OP;
 		end
@@ -264,7 +264,7 @@ endtask
 task StoreW;
 	begin
 		case (phase)
-			0: begin nextLoadIsDynamic<=0; address<=operand[0]+operand[1]*2; writeEnable<=1; dataOut<=operand[2][15:8]; phase<=phase+1; end
+			0: begin cachedReg<=15; nextLoadIsDynamic<=0; address<=operand[0]+operand[1]*2; writeEnable<=1; dataOut<=operand[2][15:8]; phase<=phase+1; end
 			1: begin address<=address+1; dataOut<=operand[2][7:0]; phase<=phase+1; end
 			default: begin address<=pc; writeEnable<=0; state<=`STATE_FETCH_OP; end
 		endcase
@@ -291,15 +291,15 @@ task StoreResultAndBranch;
 		if (store>=16) begin
 			address<=globalsAddress+2*(store-16);
 		end else if (store==0) begin
-			address<=stackAddress;
-			stackAddress<=stackAddress+2;
+			address<=2*stackAddress;
+			stackAddress<=stackAddress+1;
 		end else begin
-			address<=csStack+7+2*(store-1);
+			address<=csStack+8+2*(store-1);
 		end
 		dataOut<=result[15:8];
 		writeEnable<=1;
 		state<=`STATE_STORE_REGISTER;
-		returnValue<=result;
+		returnValue[7:0]<=result[7:0];
 		delayedBranch<=doBranch;
 		phase<=1;
 	end
@@ -561,13 +561,13 @@ task Pull;
 	begin
 		case (phase)
 			0: begin
-				address<=stackAddress-2;
+				address<=2*(stackAddress-1);
 				forceDynamicRead<=1;
 				phase<=phase+1;
 			end
 			1: begin
 				temp[7:0]<=data;
-				stackAddress<=address;
+				stackAddress<=address>>1;
 				address<=address+1;
 				phase<=phase+1;
 			end
@@ -577,7 +577,7 @@ task Pull;
 					ReturnFunction((temp[7:0]<<8)|data);
 				end else begin
 					if (operand[0]==0)
-						stackAddress<=stackAddress-2;
+						stackAddress<=stackAddress-1;
 					StoreRegisterAndBranch(operand[0], (temp[7:0]<<8)|data, negate);
 				end
 			end
@@ -821,7 +821,7 @@ task DoOp;
 					`OP0_SAVE,`OP0_RESTORE: DoBranch(0);
 					`OP0_RESTART: state<=`STATE_RESET;
 					`OP0_RETPOP: Pull(1);
-					`OP0_POP: begin stackAddress<=stackAddress-2; state<=`STATE_FETCH_OP; end
+					`OP0_POP: begin cachedReg<=15; stackAddress<=stackAddress-1; state<=`STATE_FETCH_OP; end
 					`OP0_QUIT: begin operand[0]<=`QUIT_CALLBACK; CallFunction(0,1); end
 					`OP0_NEWLINE: PrintChar(10);
 					`OP0_SHOWSTATUS: begin operand[0]<=`STATUS_CALLBACK; CallFunction(0,1); end
@@ -869,7 +869,7 @@ task DoOp;
 					`OP2_TESTATTR: TestAttr();
 					`OP2_SETATTR: SetAttr();
 					`OP2_CLEARATTR: ClearAttr();
-					`OP2_STORE: begin if (operand[0]==0) stackAddress<=stackAddress-2; StoreRegisterAndBranch(operand[0], operand[1], negate); end
+					`OP2_STORE: begin if (operand[0]==0) stackAddress<=stackAddress-1; StoreRegisterAndBranch(operand[0], operand[1], negate); end
 					`OP2_INSERTOBJ: RemoveObject();
 					`OP2_LOADW: LoadAndStore(operand[0]+2*operand[1], 1);
 					`OP2_LOADB: LoadAndStore(operand[0]+operand[1], 0);
@@ -994,7 +994,7 @@ begin
 			case (op[4:0])
 				`OP2_INC_CHK,`OP2_DEC_CHK: begin pc<=pc+1; state<=`STATE_READ_INDIRECT; end
 				`OP2_OR,`OP2_AND,`OP2_ADD,`OP2_SUB,`OP2_MUL: begin pc<=pc+1; state<=`STATE_READ_STORE; end
-				`OP2_LOADW,`OP2_LOADB,`OP2_GETPROP,`OP2_GETPROPADDR,`OP2_GETNEXTPROP,`OP2_DIV,`OP2_MOD: begin pc<=pc+2; state<=`STATE_DO_OP; end
+				`OP2_LOADW,`OP2_LOADB,`OP2_GETPROP ,`OP2_GETPROPADDR,`OP2_GETNEXTPROP,`OP2_DIV,`OP2_MOD: begin pc<=pc+2; state<=`STATE_DO_OP; end
 				`OP2_JE,`OP2_JL,`OP2_JG,`OP2_JIN,`OP2_TEST,`OP2_TESTATTR: begin pc<=pc+1; state<=`STATE_READ_BRANCH; end
 				default: begin pc<=pc+1; state<=`STATE_DO_OP; end
 			endcase
@@ -1027,9 +1027,10 @@ begin
 				9: begin writeEnable<=1; dataOut<=0; address<=address+1; if (address[15:0]=='hffff) begin writeEnable<=0; phase<=10; end end
 				10: begin rlcdReset<=address[10]; rlcdRS<=1; printEnable<=0; address<=address+1; if (address[10:0]=='h7ff) phase<=11; end
 				default: begin
+					cachedReg<=15;
 					address<=pc;
 					forceStaticRead<=0;
-					stackAddress<=64*1024;
+					stackAddress<=64*1024/2;
 					csStack<=65*1024;
 					operand[0]<=`INIT_CALLBACK;
 					operTypes[1]<=`OPER_OMIT;
@@ -1050,26 +1051,26 @@ begin
 				8: begin address<=address+1; operand[0][15:8]<=data; phase<=phase+1; end
 				9: begin operand[0][7:0]<=data; phase<=phase+1; end
 				default: begin
-					csStack<=csStack+37;
+					cachedReg<=15;
+					csStack<=csStack+38;
 					address<=2*operand[0];
 					state<=`STATE_READ_FUNCTION;
 					writeEnable<=0;
-					cachedReg<=255;
 					phase<=0;
 				end
 			endcase
 		end
 		`STATE_RET_FUNCTION: begin
 			case (phase)
-				0: begin csStack<=csStack-37; address<=csStack-37; forceDynamicRead<=1; phase<=phase+1; end
+				0: begin csStack<=csStack-38; address<=csStack-38; forceDynamicRead<=1; phase<=phase+1; end
 				1: begin pc[16]<=data[0]; negate<=data[1]; delayedBranch<=data[2]; address<=address+1; phase<=phase+1; end
 				2: begin pc[15:8]<=data; address<=address+1; phase<=phase+1; end
 				3: begin pc[7:0]<=data; address<=address+1; phase<=phase+1; end
-				4: begin stackAddress[16]<=1; stackAddress[15:8]<=data; address<=address+1; phase<=phase+1; end
+				4: begin stackAddress[15:8]<=data; address<=address+1; phase<=phase+1; end
 				5: begin stackAddress[7:0]<=data; address<=address+1; phase<=phase+1; end
 				default: begin
 					forceDynamicRead<=0;
-					cachedReg<=255;
+					cachedReg<=15;
 					if (negate) begin
 						phase<=0;
 					end else if (delayedBranch) begin
@@ -1097,7 +1098,7 @@ begin
 				1: begin
 					if (opsToRead&1) begin
 						dataOut<=data;
-						address<=csStack+7+currentLocal;
+						address<=csStack+8+currentLocal;
 						writeEnable<=1;
 						currentLocal<=currentLocal+1;
 					end else begin
@@ -1121,7 +1122,7 @@ begin
 					end else begin
 						dataOut<=currentLocal[0]?operand[(currentLocal>>1)+1][7:0]:operand[(currentLocal>>1)+1][15:8];
 						writeEnable<=1;
-						address<=csStack+7+currentLocal;
+						address<=csStack+8+currentLocal;
 					end
 					currentLocal<=currentLocal+1;
 				end
@@ -1222,9 +1223,9 @@ begin
 					case (phase)
 						0: begin
 							if (data==0) begin
-								stackAddress<=stackAddress-2;
+								stackAddress<=stackAddress-1;
 							end
-							if (cachedReg!=255 && data==cachedReg) begin
+							if (cachedReg!=15 && data==cachedReg) begin
 								operand[operandIdx]<=cachedValue;
 								address<=pc+1;
 								operandIdx<=operandIdx+1;
@@ -1233,14 +1234,14 @@ begin
 								else
 									pc<=pc+1;
 								if (cachedReg==0)
-									cachedReg<=255;
+									cachedReg<=15;
 							end else begin
 								if (data>=16) begin
 									address<=globalsAddress+2*(data-16);
 								end else if (data==0) begin
-									address<=stackAddress-2;
+									address<=2*(stackAddress-1);
 								end else begin
-									address<=csStack+7+2*(data-1);
+									address<=csStack+8+2*(data-1);
 								end
 								forceDynamicRead<=1;	
 								phase<=phase+1;
@@ -1269,15 +1270,16 @@ begin
 		`STATE_READ_INDIRECT: begin
 			case (phase)
 				0: begin
+					cachedReg<=15;
 					store<=operand[0];
 					if (operand[0]>=16) begin
 						address<=globalsAddress+2*(operand[0]-16);
 					end else if (operand[0]==0) begin
 						if (op[4:0]!=`OP1_LOAD)
-							stackAddress<=stackAddress-2;
-						address<=stackAddress-2;
+							stackAddress<=stackAddress-1;
+						address<=2*(stackAddress-1);
 					end else begin
-						address<=csStack+7+2*(operand[0]-1);
+						address<=csStack+8+2*(operand[0]-1);
 					end
 					forceDynamicRead<=1;
 					phase<=phase+1;
@@ -1338,23 +1340,24 @@ begin
 					if (store>=16) begin
 						address<=globalsAddress+2*(store-16);
 					end else if (store==0) begin
-						address<=stackAddress;
-						stackAddress<=stackAddress+2;
+						address<=2*stackAddress;
+						stackAddress<=stackAddress+1;
 					end else begin
-						address<=csStack+7+2*(store-1);
+						address<=csStack+8+2*(store-1);
 					end
 					dataOut<=returnValue[15:8];
 					writeEnable<=1;
 					phase<=phase+1;
 				end
 				1: begin
+					cachedReg<=store;
+					cachedValue[15:8]<=dataOut;
+					cachedValue[7:0]<=returnValue[7:0];
 					dataOut<=returnValue[7:0];
 					address<=address+1;
 					phase<=phase+1;
 				end
 				default: begin
-					cachedReg<=store;
-					cachedValue<=returnValue;
 					DoBranch(delayedBranch);
 					writeEnable<=0;
 					phase<=0;
@@ -1493,7 +1496,7 @@ begin
 			operand[2]<=operand[0];
 			operand[3]<=operand[1];
 			operand[0]<=`EXCEPTION_CALLBACK;
-			operTypes[0]<=`OPER_LARGE;
+			//operTypes[0]<=`OPER_LARGE;
 			operTypes[1]<=`OPER_LARGE;
 			operTypes[2]<=`OPER_LARGE;
 			operTypes[3]<=`OPER_LARGE;

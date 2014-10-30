@@ -83,6 +83,7 @@
 4548 (99%)		- Reset switch (and working touch screen)
 4495 (98%)		- Removed wasted cycle when fetching ops
 4550 (99%)		- Removed wasted cycle when storing results on some ops
+4580 (99%)		- Added last stored variable cache
 
 Todo:
 - Paging (Software)
