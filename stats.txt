@@ -386,3 +386,137 @@ OpCyc:          3/          8       1789/       235=          7
 OpCyc:          3/          9        243/        27=          9
 OpCyc:          3/         30      44976/      5622=          8
 OpCyc:          3/         31      17781/       577=         30
+
+Two variable cache experiment (with better invalidation)
+--------------------------------------------------------
+
+Fetching op at 1e65c
+Mem req: 1e65d WE:0 PE:1111 RoS:1 RaS:0 D:06 LEDs:011 ADC:0101100 Ops:    1352974/    9801331
+Mem req: 1e3ea WE:0 PE:1111 RoS:0 RaS:1 D:e5 LEDs:011 ADC:0011111 Ops:    1352974/    9801332
+Mem req: 1e3eb WE:0 PE:1111 RoS:0 RaS:1 D:01 LEDs:011 ADC:0111100 Ops:    1352974/    9801333
+Mem req: 1e65e WE:0 PE:1111 RoS:1 RaS:0 D:00 LEDs:011 ADC:0011100 Ops:    1352974/    9801334
+Mem req: 1e65f WE:0 PE:1111 RoS:1 RaS:0 D:00 LEDs:011 ADC:0111100 Ops:    1352974/    9801335
+Mem req: 1e660 WE:0 PE:1111 RoS:1 RaS:0 D:74 LEDs:011 ADC:0001101 Ops:    1352974/    9801336
+PC:1e65c Doing op2:20 Operands:e501 0000 Store:00 Branch:001c/0/1ffffe67a
+Mem req: 10008 WE:1 PE:1111 RoS:0 RaS:1 D:e5 LEDs:000 ADC:0001111 Ops:    1352974/    9801337
+State:          0     198663
+State:          1    1352974
+State:          2     200078
+State:          3    3418121
+State:          4     350760
+State:          5     216605
+State:          6     549868
+State:          7    1547307
+State:          8     208311
+State:          9      34166
+State:         10      19313
+State:         11    1434986
+State:         12        268
+State:         13     468580
+OpCyc:          0/          0      32949/      2748=         11
+OpCyc:          0/          2        502/         9=         55
+OpCyc:          0/         15     161260/     80630=          2
+OpCyc:          1/          0     303733/     75899=          4
+OpCyc:          1/          5     934080/    116760=          8
+OpCyc:          1/          6       1280/       160=          8
+OpCyc:          1/         11        143/        11=         13
+OpCyc:          1/         12     660404/    165101=          4
+OpCyc:          2/          1     379402/     75583=          5
+OpCyc:          2/          2     918692/    156514=          5
+OpCyc:          2/          3     948233/    150405=          6
+OpCyc:          2/          8       1197/       133=          9
+OpCyc:          2/          9     548189/     56475=          9
+OpCyc:          2/         10          8/         1=          8
+OpCyc:          2/         13    1077704/    137818=          7
+OpCyc:          2/         15     528226/     47238=         11
+OpCyc:          2/         16     332837/     33282=         10
+OpCyc:          2/         20     682355/     77296=          8
+OpCyc:          2/         21     295582/     41000=          7
+OpCyc:          2/         22     328271/     37443=          8
+OpCyc:          2/         23     770713/     37729=         20
+OpCyc:          2/         30        573/        53=         10
+OpCyc:          3/          0     276339/      4257=         64
+OpCyc:          3/          1     102255/      9515=         10
+OpCyc:          3/          2     515856/     46896=         11
+OpCyc:          3/          3         17/         1=         17
+OpCyc:          3/         31        520/        16=         32
+
+Some optimised zero ops and call improvements (don't read args then set)
+------------------------------------------------------------------------
+
+Fetching op at 1f0d6
+Mem req: 1f0d7 WE:0 PE:1111 RoS:1 RaS:0 D:09 LEDs:111 ADC:0111100 Ops:    1362450/    9801333
+Mem req: 104b0 WE:0 PE:1111 RoS:0 RaS:1 D:3b LEDs:000 ADC:0001100 Ops:    1362450/    9801334
+Mem req: 104b1 WE:0 PE:1111 RoS:0 RaS:1 D:ad LEDs:000 ADC:0101110 Ops:    1362450/    9801335
+Mem req: 1f0d8 WE:0 PE:1111 RoS:1 RaS:0 D:00 LEDs:111 ADC:0001100 Ops:    1362450/    9801336
+Mem req: 1f0d9 WE:0 PE:1111 RoS:1 RaS:0 D:00 LEDs:111 ADC:0101100 Ops:    1362450/    9801337
+State:          0     198663
+State:          1    1362450
+State:          2     147897
+State:          3    3759655
+State:          4     520740
+State:          5     301732
+State:          6     297272
+State:          7    1634132
+State:          8      91528
+State:          9      23417
+State:         10      22288
+State:         11    1527309
+State:         12        899
+State:         13     112018
+OpCyc:          0/          0      22936/      1992=         11
+OpCyc:          0/          1       1932/       161=         12
+OpCyc:          0/          2       3457/       126=         27
+OpCyc:          0/          3        286/        13=         22
+OpCyc:          0/          8       2128/       152=         14
+OpCyc:          0/         11       1825/        73=         25
+OpCyc:          0/         15     171302/    171302=          1
+OpCyc:          1/          0     420392/     95134=          4
+OpCyc:          1/          1       3664/       364=         10
+OpCyc:          1/          2       3350/       338=          9
+OpCyc:          1/          3       2532/       292=          8
+OpCyc:          1/          4        688/        86=          8
+OpCyc:          1/          5     908296/    113537=          8
+OpCyc:          1/          6     475864/     59483=          8
+OpCyc:          1/         10       1485/        55=         27
+OpCyc:          1/         11       5013/       359=         13
+OpCyc:          1/         12     621072/    155268=          4
+OpCyc:          1/         13        462/        20=         23
+OpCyc:          1/         15        888/       148=          6
+OpCyc:          2/          1     279755/     39681=          7
+OpCyc:          2/          2     566238/     95084=          5
+OpCyc:          2/          3     203057/     32920=          6
+OpCyc:          2/          4       1110/       109=         10
+OpCyc:          2/          5       5027/       451=         11
+OpCyc:          2/          6       1440/       148=          9
+OpCyc:          2/          7       2781/       243=         11
+OpCyc:          2/          8     379926/     42214=          9
+OpCyc:          2/          9     125267/     13261=          9
+OpCyc:          2/         10       9048/      1156=          7
+OpCyc:          2/         11        362/        51=          7
+OpCyc:          2/         12       1250/       174=          7
+OpCyc:          2/         13     264869/     35155=          7
+OpCyc:          2/         14        627/        42=         14
+OpCyc:          2/         15     898267/     73676=         12
+OpCyc:          2/         16     715779/     70514=         10
+OpCyc:          2/         17       5247/       290=         18
+OpCyc:          2/         18       2777/       231=         12
+OpCyc:          2/         19        236/        14=         16
+OpCyc:          2/         20    1349247/    145977=          9
+OpCyc:          2/         21      74907/     10103=          7
+OpCyc:          2/         22     693253/     80151=          8
+OpCyc:          2/         23     190143/      9128=         20
+OpCyc:          2/         30      12717/      1261=         10
+OpCyc:          3/          0     132380/      2892=         45
+OpCyc:          3/          1    1095982/     95978=         11
+OpCyc:          3/          2      70470/      5784=         12
+OpCyc:          3/          3         55/         3=         18
+OpCyc:          3/          4       1440/        24=         60
+OpCyc:          3/          5        162/         6=         27
+OpCyc:          3/          6       1811/        49=         36
+OpCyc:          3/          7        143/         4=         35
+OpCyc:          3/          8       1789/       235=          7
+OpCyc:          3/          9        243/        27=          9
+OpCyc:          3/         30      47216/      5902=          8
+OpCyc:          3/         31      18728/       608=         30
+

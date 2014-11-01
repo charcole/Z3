@@ -84,10 +84,11 @@
 4495 (98%)		- Removed wasted cycle when fetching ops
 4550 (99%)		- Removed wasted cycle when storing results on some ops
 4580 (99%)		- Added last stored variable cache
+4555 (99%)		- 1 cycle @dynamic, faster function calls + stream draw
 
 Todo:
 - Paging (Software)
-
+- Arcade Game? (Software)
 
 Touch screen
 

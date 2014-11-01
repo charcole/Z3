@@ -200,6 +200,7 @@ reg [15:0] random;
 reg [1:0] alphabet;
 reg [1:0] long;
 reg nextLoadIsDynamic;
+reg lastWriteWasDraw;
 
 reg adcClk;
 reg adcDin;
@@ -231,6 +232,7 @@ begin
 	a18=0;
 	cachedReg=0;
 	cachedValue=0;
+	lastWriteWasDraw=0;
 end
 
 assign waddress[16:2] = address[16:2];
@@ -719,7 +721,7 @@ endtask
 task WriteReg;
 	begin
 		case (phase)
-			0: begin rlcdRS<=0; phase<=phase+1; end 
+			0: begin lastWriteWasDraw<=(operand[0]=='h22); if (operand[0]=='h22 && lastWriteWasDraw) begin rlcdRS<=1; phase<=4; end else begin rlcdRS<=0; phase<=phase+1; end end 
 			1: begin dataOut<=operand[0][15:8]; printEnable<=1; phase<=phase+1; end
 			2: begin dataOut<=operand[0][7:0]; if (operand[0]==0) phase<=4; else phase<=phase+1; end
 			3: begin rlcdRS<=1; printEnable<=0; phase<=phase+1; end
@@ -817,16 +819,13 @@ task DoOp;
 					`OP0_RFALSE: ReturnFunction(0);
 					`OP0_PRINT: Print(pc, `PRINTEFFECT_FETCHAFTER);
 					`OP0_PRINTRET: Print(pc, `PRINTEFFECT_RET1);
-					`OP0_NOP: state<=`STATE_FETCH_OP;
 					`OP0_SAVE,`OP0_RESTORE: DoBranch(0);
 					`OP0_RESTART: state<=`STATE_RESET;
 					`OP0_RETPOP: Pull(1);
-					`OP0_POP: begin cachedReg<=15; stackAddress<=stackAddress-1; state<=`STATE_FETCH_OP; end
 					`OP0_QUIT: begin operand[0]<=`QUIT_CALLBACK; CallFunction(0,1); end
 					`OP0_NEWLINE: PrintChar(10);
 					`OP0_SHOWSTATUS: begin operand[0]<=`STATUS_CALLBACK; CallFunction(0,1); end
 					`OP0_VERIFY: DoBranch(1);
-					`OP0_DYNAMIC: begin nextLoadIsDynamic<=1; state<=`STATE_FETCH_OP; end
 					default: state<=`STATE_HALT;
 				endcase
 			end
@@ -1042,8 +1041,8 @@ begin
 			case (phase)
 				0: begin $display("Call function %h", operand[0]*2); address<=csStack; writeEnable<=1; dataOut<=(delayedBranch<<2)|(negate<<1)|pc[16]; phase<=phase+1; end
 				1: begin address<=address+1; dataOut<=pc[15:8]; phase<=phase+1; end
-				2: begin address<=address+1; dataOut<=pc[7:0]; phase<=phase+1; end
-				3: begin phase<=phase+1; end
+				2: begin address<=address+1; dataOut<=pc[7:0]; phase<=4; end
+				3: begin end // pointless phase but for some reason saves gates
 				4: begin address<=address+1; dataOut<=stackAddress[15:8]; phase<=phase+1; end
 				5: begin address<=address+1; dataOut<=stackAddress[7:0]; phase<=phase+1; end
 				6: begin address<=address+1; dataOut<=store; phase<=(operand[0][15:3]==0)?phase+1:10; end
@@ -1095,9 +1094,13 @@ begin
 					pc<=address+1;
 					address<=address+1;
 				end
-				1: begin
+				default: begin
 					if (opsToRead&1) begin
-						dataOut<=data;
+						if (currentLocal<6 && operTypes[(currentLocal>>1)+1]!=`OPER_OMIT) begin
+							dataOut<=currentLocal[0]?operand[(currentLocal>>1)+1][7:0]:operand[(currentLocal>>1)+1][15:8];
+						end else begin
+							dataOut<=data;
+						end
 						address<=csStack+8+currentLocal;
 						writeEnable<=1;
 						currentLocal<=currentLocal+1;
@@ -1106,30 +1109,17 @@ begin
 						address<=pc+1;
 						writeEnable<=0;
 					end
-					if (opsToRead==1) begin
-						phase<=phase+1;
-						currentLocal<=0;
+					if (opsToRead==0) begin
+						state<=`STATE_FETCH_OP;						
 					end
 					opsToRead<=opsToRead-1;
-				end
-				default: begin
-					if (operTypes[(currentLocal>>1)+1]==`OPER_OMIT) begin
-						state<=`STATE_FETCH_OP;
-						writeEnable<=0;
-						pc<=pc+1;
-						address<=pc+1;
-						phase<=0;
-					end else begin
-						dataOut<=currentLocal[0]?operand[(currentLocal>>1)+1][7:0]:operand[(currentLocal>>1)+1][15:8];
-						writeEnable<=1;
-						address<=csStack+8+currentLocal;
-					end
-					currentLocal<=currentLocal+1;
 				end
 			endcase
 		end
 		`STATE_FETCH_OP: begin
 			phase<=0;
+			operTypes[2]<=`OPER_OMIT;
+			operTypes[3]<=`OPER_OMIT;
 			operTypes[4]<=`OPER_OMIT;
 			curPC<=pc;
 			$display("Fetching op at %h", pc);
@@ -1144,11 +1134,12 @@ begin
 						op[4:0]<=data[3:0];
 						operTypes[0]<=data[5:4];
 						operTypes[1]<=`OPER_OMIT;
-						operTypes[2]<=`OPER_OMIT;
-						operTypes[3]<=`OPER_OMIT;
 						if (data[5:4]==2'b11) begin
 							operNum[1:0]<=`OP_0;
 							case (data[3:0])
+								`OP0_POP: begin cachedReg<=15; stackAddress<=stackAddress-1; end
+								`OP0_NOP: begin /*nop*/ end
+								`OP0_DYNAMIC: nextLoadIsDynamic<=1;
 								`OP0_SAVE,`OP0_RESTORE,`OP0_VERIFY: state<=`STATE_READ_BRANCH;
 								default: state<=`STATE_DO_OP;
 							endcase
@@ -1169,8 +1160,6 @@ begin
 						operNum[1:0]<=`OP_2;
 						operTypes[0]<=(data[6] ? `OPER_VARI : `OPER_SMALL);
 						operTypes[1]<=(data[5] ? `OPER_VARI : `OPER_SMALL);
-						operTypes[2]<=`OPER_OMIT;
-						operTypes[3]<=`OPER_OMIT;
 						state<=`STATE_READ_OPERS;
 					end
 				endcase

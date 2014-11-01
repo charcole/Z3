@@ -419,9 +419,10 @@ imageO imageP c col count p x y winW winWMax;
 
 y=0;
 c=320;
+@write_reg 32 0;
+@write_reg 33 0;
 while (c)
 {
-	@write_reg 33 y;
 	p=240;
 	while (p)
 	{
@@ -429,7 +430,6 @@ while (c)
 		if ((c+p)&7 && (c-p)&7)
 			col=((0-->(palette+c))*(0-->(palette+(p+40))))&$7E0;
 		p--;
-		@write_reg 32 p;
 		@write_reg 34 col;
 	}
 	c--;
@@ -460,7 +460,9 @@ while (p)
 	{
 		y=167;
 	}
-	x=winW;
+	@write_reg $0050 winW;
+	@write_reg $0051 winWMax;
+	@write_reg 32 winW;
 	@write_reg 33 y;
 	count=100*120;
 	while (count>0)
@@ -475,34 +477,20 @@ while (p)
 			count=count-c;
 			while (c)
 			{
-				if (x>winWMax)
-				{
-					x=winW;
-					y++;
-					@write_reg 33 y;
-				}
-				@write_reg 32 x;
-				x++;
 				@write_reg 34 col;
 				c--;
 			}
 		}
 		else
 		{
-			if (x>winWMax)
-			{
-				x=winW;
-				y++;
-				@write_reg 33 y;
-			}
-			@write_reg 32 x;
-			x++;
 			@write_reg 34 col;	
 			count--;
 		}
 	}
 	p--;
 }
+@write_reg $0050 $0000;
+@write_reg $0051 $00EF;
 @write_reg $0007 $0133; ! Turn on the screen
 	
 do !wait for touch
