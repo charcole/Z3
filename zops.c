@@ -1510,6 +1510,17 @@ void processVARInstruction()
 					curIdx++;                         
 					screen[curIdx%(320*240)]=(data&0x01)?m_ins.operands[3].value:m_ins.operands[2].value;
 					curIdx++;
+					curX+=8;
+					if (curX>winXMax)
+					{
+						curX=winXMin;
+						curY++;
+						if (curY>winYMax)
+						{
+							curY=winYMin;
+						}
+						curIdx=curY*240+curX;
+					}
 				}
 				SDL_UpdateTexture(tex, NULL, screen, 240*sizeof(screen[0]));
 				SDL_RenderClear(ren);

@@ -513,6 +513,378 @@ if (p>0)
 	@switch_bank p;
 ];
 
+[Mandelbrot
+palette x y xtemp ytemp x0 y0 x00 y00 i;
+palette=contextW-MaxTextSize/2;
+2==>palette=63488; 4==>palette=63488; 6==>palette=63488; 8==>palette=63488;
+10==>palette=63488; 12==>palette=63488; 14==>palette=64000; 16==>palette=65280;
+18==>palette=64512; 20==>palette=63744; 22==>palette=65152; 24==>palette=64384;
+26==>palette=65408; 28==>palette=57216; 30==>palette=49024; 32==>palette=32640;
+34==>palette=24448; 36==>palette=16256; 38==>palette=8064; 40==>palette=8068;
+42==>palette=8073; 44==>palette=8078; 46==>palette=8083; 48==>palette=8089;
+50==>palette=8094; 52==>palette=7327; 54==>palette=5919; 56==>palette=4639;
+58==>palette=3359; 60==>palette=2079; 62==>palette=799; 64==>palette=4127;
+@write_reg 32 0;
+@write_reg 33 StatusHeight;
+y0=60;
+do
+{
+	x0=-120;
+	y00=y0*40;
+	do
+	{
+		xtemp=0;
+		ytemp=0;
+		x=0;
+		y=0;
+		i=0;
+		x00=x0*40;
+		do
+		{
+			xtemp=xtemp-ytemp+y00;
+			y=(2*x*y+x00)/64;
+			x=xtemp/64;
+			xtemp=x*x;
+			ytemp=y*y;
+			i++;
+		} until ( xtemp + ytemp >= 64*64*4 || i>=32);
+		i=0==>(i+palette);
+		@write_reg 34 i;
+		x0++;
+	} until (x0>=120);
+	y0--;
+} until (y0==60-(KeyboardStartLine-StatusHeight));
+@write_reg $0007 $0133; ! Turn on the screen
+x=GetKey();
+];
+
+[SpaceInvaders
+sprites x y i k s xd u a c sx t p delay;
+
+sprites=contextW-MaxTextSize/2;
+!squid1
+0==>sprites=8*(8|16);
+2==>sprites=8*(4|8|16|32);
+4==>sprites=8*(2|4|8|16|32|64);
+6==>sprites=8*(1|2|8|16|64|128);
+8==>sprites=8*(1|2|4|8|16|32|64|128);
+10==>sprites=8*(4|32);
+12==>sprites=8*(2|8|16|64);
+14==>sprites=8*(1|4|32|128);
+!ant1
+16==>sprites=4*(4|256);
+18==>sprites=4*(8|128);
+20==>sprites=4*(4|8|16|32|64|128|256);
+22==>sprites=4*(2|4|16|32|64|256|512);
+24==>sprites=4*(1|2|4|8|16|32|64|128|256|512|1024);
+26==>sprites=4*(1|4|8|16|32|64|128|256|1024);
+28==>sprites=4*(1|4|256|1024);
+30==>sprites=4*(8|16|64|128);
+!bug1
+32==>sprites=4*(16|32|64|128);
+34==>sprites=4*(2|4|8|16|32|64|128|256|512|1024);
+36==>sprites=4*(1|2|4|8|16|32|64|128|256|512|1024|2048);
+38==>sprites=4*(1|2|4|32|64|512|1024|2048);
+40==>sprites=4*(1|2|4|8|16|32|64|128|256|512|1024|2048);
+42==>sprites=4*(4|8|16|128|256|512);
+44==>sprites=4*(2|4|32|64|512|1024);
+46==>sprites=4*(4|8|256|512);
+!squid2
+48==>sprites=8*(8|16);
+50==>sprites=8*(4|8|16|32);
+52==>sprites=8*(2|4|8|16|32|64);
+54==>sprites=8*(1|2|8|16|64|128);
+56==>sprites=8*(1|2|4|8|16|32|64|128);
+58==>sprites=8*(2|8|16|64);
+60==>sprites=8*(1|128);
+62==>sprites=8*(2|64);
+!ant2
+64==>sprites=4*(4|256);
+66==>sprites=4*(1|8|128|1024);
+68==>sprites=4*(1|4|8|16|32|64|128|256|1024);
+70==>sprites=4*(1|2|4|16|32|64|256|512|1024);
+72==>sprites=4*(1|2|4|8|16|32|64|128|256|512|1024);
+74==>sprites=4*(2|4|8|16|32|64|128|256|512);
+76==>sprites=4*(4|256);
+78==>sprites=4*(2|512);
+!bug2
+80==>sprites=4*(16|32|64|128);
+82==>sprites=4*(2|4|8|16|32|64|128|256|512|1024);
+84==>sprites=4*(1|2|4|8|16|32|64|128|256|512|1024|2048);
+86==>sprites=4*(1|2|4|32|64|512|1024|2048);
+88==>sprites=4*(1|2|4|8|16|32|64|128|256|512|1024|2048);
+90==>sprites=4*(8|16|128|256);
+92==>sprites=4*(4|8|32|64|256|512);
+94==>sprites=4*(1|2|1024|2048);
+!ship
+96==>sprites=2*(64);
+98==>sprites=2*(32|64|128);
+100==>sprites=2*(32|64|128);
+102==>sprites=2*(2|4|8|16|32|64|128|256|512|1024|2048);
+104==>sprites=2*(1|2|4|8|16|32|64|128|256|512|1024|2048|4096);
+106==>sprites=2*(1|2|4|8|16|32|64|128|256|512|1024|2048|4096);
+108==>sprites=2*(1|2|4|8|16|32|64|128|256|512|1024|2048|4096);
+110==>sprites=2*(1|2|4|8|16|32|64|128|256|512|1024|2048|4096);
+
+! startX
+200==>sprites=8;
+202==>sprites=8;
+204==>sprites=8;
+206==>sprites=8;
+208==>sprites=8;
+! startY
+210==>sprites=16;
+212==>sprites=32;
+214==>sprites=48;
+216==>sprites=64;
+218==>sprites=80;
+
+!alive
+220==>sprites=$7ff;
+222==>sprites=$7ff;
+224==>sprites=$7ff;
+226==>sprites=$7ff;
+228==>sprites=$7ff;
+
+!bullet
+234==>sprites=0;
+240==>sprites=0;
+246==>sprites=0;
+252==>sprites=0;
+258==>sprites=0;
+
+!base
+260==>sprites=$0FFF; 262==>sprites=$C000;
+264==>sprites=$1FFF; 266==>sprites=$E000;
+268==>sprites=$3FFF; 270==>sprites=$F000;
+272==>sprites=$7FFF; 274==>sprites=$F800;
+276==>sprites=$FFFF; 278==>sprites=$FC00;
+280==>sprites=$FFFF; 282==>sprites=$FC00;
+284==>sprites=$FFFF; 286==>sprites=$FC00;
+288==>sprites=$FFFF; 290==>sprites=$FC00;
+292==>sprites=$FFFF; 294==>sprites=$FC00;
+296==>sprites=$FFFF; 298==>sprites=$FC00;
+300==>sprites=$FFFF; 302==>sprites=$FC00;
+304==>sprites=$FFFF; 306==>sprites=$FC00;
+308==>sprites=$FE03; 310==>sprites=$FC00;
+312==>sprites=$FC01; 314==>sprites=$FC00;
+316==>sprites=$F800; 318==>sprites=$FC00;
+320==>sprites=$F800; 322==>sprites=$FC00;
+s=sprites+130;
+for (k=0: k<3*32: k++)
+{
+	64==>s=0==>s;
+	s++;
+} 
+
+@write_reg $0050 0;
+@write_reg $0051 $EF;
+@write_reg 32 0;
+@write_reg 33 StatusHeight;
+@blit1 0 6900 0 0;
+xd=2;
+sx=115;
+delay=10000;
+while (218==>sprites<220 && delay>100)
+{
+	if (random(50)==1)
+	{
+		x=random(11)-1;
+		k=x;
+		t=1;
+		while (k)
+		{
+			t=t*2;
+			k--;
+		}
+		x=208==>sprites+16*x;
+		s=228;
+		y=0;
+		for (k=0: k<5: k++)
+		{
+			if (s==>sprites&t)
+			{
+				y=(s-10)==>sprites+6;
+				break;
+			}
+			s=s-2;
+		}
+		if (y)
+		{
+			for (k=0: k<4: k++)
+			{
+				s=236+6*k;
+				if (~~(s+4)==>sprites)
+				{
+					s==>sprites=x+8;
+					(s+2)==>sprites=y;
+					(s+4)==>sprites=1;
+					break;
+				}
+			}
+		}
+	}
+	
+	u--;
+	if (u<0)
+		u=4*4;
+	if (u&3==0)
+	{
+		t=u/4;
+		x=200==>(sprites+t);
+		x=x+xd;
+		if (x>54 || x<8)
+		{
+			y=210==>(sprites+t);
+			@write_reg $0050 0;
+			@write_reg $0051 $EF;
+			@write_reg 32 0;
+			@write_reg 33 y;
+			@blit1 0 240 0 0;
+			210==>(sprites+t)=y+10;
+			if (t==0)
+				xd=-xd;
+		}
+		200==>(sprites+t)=x;
+	}
+	s=sprites+130;
+	for (k=0: k<4: k++)
+	{
+		x=35+k*50;
+		@write_reg $50 x;
+		@write_reg 32 x;
+		x=x+31;
+		@write_reg $51 x;
+		@write_reg 33 195;
+		@blit1 s 64 0 $7E0;
+		s=s+32;
+	}
+	for (k=0: k<5: k++)
+	{
+		x=200==>(sprites+k);
+		y=210==>(sprites+k);
+		a=220==>(sprites+k);
+		c=y/8;
+		c=(31-c)*32*64+c+1;
+		s=sprites;
+		if (x&2)
+			s=s+24;
+		if (k>=3)
+			s=s+16;
+		else if (k>=1)
+			s=s+8;
+		t=1;
+		for (i=0: i<11: i++)
+		{
+			@write_reg $0050 x;
+			@write_reg 32 x;
+			@write_reg 33 y;
+			x=x+15;
+			@write_reg $0051 x;
+			x++;
+			if (a&t)
+				@blit1 s 16 0 c;
+			else
+				@blit1 s 16 0 0;
+			t=t*2;
+		}
+	}
+	s=230;
+	for (k=0: k<5: k++)
+	{
+		x=(s+4)==>sprites;
+		if (x)
+		{
+			y=(s+2)==>sprites;
+			y=y+x;
+			(s+2)==>sprites=y;
+			if (x<0)
+			{
+				for (i=0: i<5: i++)
+				{
+					t=210==>(sprites+i);
+					if (y>=t && y<t+6)
+					{
+						t=s==>sprites-200==>(sprites+i);
+						if (t>=0 && t<11*16)
+						{
+							p=1;
+							while (t>16)
+							{
+								p=p*2;
+								t=t-16;
+							}
+							if (t>2 && t<14)
+							{
+								if (220==>(sprites+i)&p)
+								{
+									220==>(sprites+i)=220==>(sprites+i)&~p;
+									(s+4)==>sprites=0;
+									delay=delay-180;
+									break;
+								}
+							}
+						}
+					}
+				}
+			}
+			i=s==>sprites;
+			if (x>0 && i>sx+1 && i<sx+15 && y>=223 && y<228)
+				(s+4)==>sprites=0;
+			@write_reg 32 i;
+			@write_reg 33 y;
+			if (y>StatusHeight && y<KeyboardStartLine)
+				@write_reg 34 $7E0;
+			if (x>0)
+				y=y-3*x;
+			else
+				y=y-x;
+			@write_reg 32 i;
+			@write_reg 33 y;
+			if (y>StatusHeight && y<KeyboardStartLine)
+				@write_reg 34 0;
+			else
+				(s+4)==>sprites=0;
+		}
+		s=s+6;
+	}
+	@get_touch $93 -> x;
+	if (x<1000)
+	{
+		@get_touch $1A -> y; ! y
+		if (y<720)
+		{
+			@get_touch $95 -> x; ! x
+			if (x>512)
+				sx++;
+			else
+				sx--;
+		}
+		else if (234==>sprites==0)
+		{
+			230==>sprites=sx+8;
+			232==>sprites=220;
+			234==>sprites=-4;
+		}
+	}
+	@write_reg $0050 sx;
+	@write_reg 32 sx;
+	x=sx+15;
+	@write_reg $0051 x;
+	@write_reg 33 220;
+	s=sprites+96/2;
+	@blit1 s 16 0 $7E0;
+	x=delay;
+	do
+	{
+		x--;
+	} until (~~x);
+	@write_reg $0007 $0133; ! Turn on the screen
+}
+@write_reg $0050 0;
+@write_reg $0051 $EF;
+];
+
 [SysInit
 temp;
 temp=InitContext();
@@ -842,6 +1214,23 @@ if (text->0==6)
 	{
 		c=text->6-'a';
 		@switch_bank c;
+	}
+}
+if (text->0==10)
+{
+	if (text->1=='m' && text->2=='a' && text->3=='n' && text->4=='d' && text->5=='e'
+	 && text->6=='l' && text->7=='b' && text->8=='r' && text->9=='o' && text->10=='t')
+	{
+		parse0=Mandelbrot();
+	}
+}
+if (text->0==12)
+{
+	if (text->1=='i' && text->2=='n' && text->3=='v' && text->4=='a' && text->5=='d'
+	 && text->6=='e' && text->7==' ' && text->8=='s' && text->9=='p' && text->10=='a'
+     && text->11=='c' && text->12=='e')
+	{
+		parse0=SpaceInvaders();
 	}
 }
 
