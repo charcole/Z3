@@ -559,7 +559,7 @@ x=GetKey();
 ];
 
 [SpaceInvaders
-sprites x y i k s xd u a c sx t p delay;
+sprites x y i k s xd u a c sx t p delay l;
 
 sprites=contextW-MaxTextSize/2;
 !squid1
@@ -684,8 +684,9 @@ for (k=0: k<3*32: k++)
 @blit1 0 6900 0 0;
 xd=2;
 sx=115;
+l=3;
 delay=10000;
-while (218==>sprites<220 && delay>100)
+while (218==>sprites<220 && delay>100 && l>0)
 {
 	if (random(50)==1)
 	{
@@ -796,6 +797,18 @@ while (218==>sprites<220 && delay>100)
 		if (x)
 		{
 			y=(s+2)==>sprites;
+			i=s==>sprites;	
+			@write_reg 32 i;
+			@write_reg $50 i;
+			@write_reg $51 i;
+			@write_reg 33 y;
+			@write_reg 34 0;
+			@write_reg 34 0;
+			if (x>0)
+			{
+				@write_reg 34 0;
+				@write_reg 34 0;
+			}
 			y=y+x;
 			(s+2)==>sprites=y;
 			if (x<0)
@@ -828,23 +841,65 @@ while (218==>sprites<220 && delay>100)
 					}
 				}
 			}
+			if (y>=195 && y<195+16)
+			{
+				t=s==>sprites-35;
+				if (t>=0 && t<4*50)
+				{
+					i=t/50;
+					t=t-i*50;
+					if (t<22)
+					{
+						k=260+(64*i)+(4*(y-195));
+						t=t+3;
+						while (t>=16)
+						{
+							t=t-8;
+							k=k++;
+						}
+						p=1;
+						t=15-t;
+						while (t)
+						{
+							t--;
+							p=p*2;
+						}
+						t=k==>sprites;
+						if (t&p)
+						{
+							k==>sprites=t&~(p*31);
+							if (y<195+15)
+								(k+4)==>sprites=(k+4)==>sprites&~(p*31);
+							if (y<195+14)
+								(k+8)==>sprites=(k+8)==>sprites&~(p*7*2);
+							if (y>195)
+								(k-4)==>sprites=(k-4)==>sprites&~(p*31);
+							if (y>196)
+								(k-8)==>sprites=(k-8)==>sprites&~(p*7*2);
+							(s+4)==>sprites=0;
+						}
+					}
+				}
+			}
 			i=s==>sprites;
-			if (x>0 && i>sx+1 && i<sx+15 && y>=223 && y<228)
+			if (x>0 && i>sx+1 && i<sx+15 && y>=220 && y<217+8)
+			{
 				(s+4)==>sprites=0;
-			@write_reg 32 i;
-			@write_reg 33 y;
-			if (y>StatusHeight && y<KeyboardStartLine)
+				l--;
+			}
+			if (y>=217+8 || y<=StatusHeight)
+				(s+4)==>sprites=0;
+			if ((s+4)==>sprites)
+			{
+				@write_reg 33 y;
 				@write_reg 34 $7E0;
-			if (x>0)
-				y=y-3*x;
-			else
-				y=y-x;
-			@write_reg 32 i;
-			@write_reg 33 y;
-			if (y>StatusHeight && y<KeyboardStartLine)
-				@write_reg 34 0;
-			else
-				(s+4)==>sprites=0;
+				@write_reg 34 $7E0;
+				if (x>0)
+				{
+					@write_reg 34 $7E0;
+					@write_reg 34 $7E0;
+				}
+			}
 		}
 		s=s+6;
 	}
@@ -863,7 +918,7 @@ while (218==>sprites<220 && delay>100)
 		else if (234==>sprites==0)
 		{
 			230==>sprites=sx+8;
-			232==>sprites=220;
+			232==>sprites=217;
 			234==>sprites=-4;
 		}
 	}
@@ -871,9 +926,24 @@ while (218==>sprites<220 && delay>100)
 	@write_reg 32 sx;
 	x=sx+15;
 	@write_reg $0051 x;
-	@write_reg 33 220;
+	@write_reg 33 218;
 	s=sprites+96/2;
 	@blit1 s 16 0 $7E0;
+
+	for (k=0: k<3 ;k++)
+	{
+		x=10+16*k;
+		@write_reg $0050 x;
+		@write_reg 32 x;
+		x=x+15;
+		@write_reg $0051 x;
+		@write_reg 33 230;
+		if (k<l)
+			@blit1 s 16 0 $7E0;
+		else
+			@blit1 s 16 0 0;
+	}
+
 	x=delay;
 	do
 	{
@@ -883,6 +953,10 @@ while (218==>sprites<220 && delay>100)
 }
 @write_reg $0050 0;
 @write_reg $0051 $EF;
+if (l>0)
+	@print "God job! You won!^^";
+else
+	@print "Bad luck, you failed :(^^";
 ];
 
 [SysInit
@@ -1193,9 +1267,12 @@ do
 {
 	i++;
 	text->i=GetKey();
-	if (text->i==0 && i>=2)
+	if (text->i==0)
 	{
-		i=i-2;
+		if (i>=2)
+			i=i-2;
+		else
+			i--;
 	}
 	temp=EraseConsole(c,sep);
 	cScrenX==>contextW=c;
@@ -1208,14 +1285,6 @@ do
 text->i=0;
 text->0=(i-1);
 
-if (text->0==6)
-{
-	if (text->1=='b' && text->2=='a' && text->3=='n' && text->4=='k' && text->5==' ')
-	{
-		c=text->6-'a';
-		@switch_bank c;
-	}
-}
 if (text->0==10)
 {
 	if (text->1=='m' && text->2=='a' && text->3=='n' && text->4=='d' && text->5=='e'
@@ -1224,11 +1293,9 @@ if (text->0==10)
 		parse0=Mandelbrot();
 	}
 }
-if (text->0==12)
+else if (text->0==6)
 {
-	if (text->1=='i' && text->2=='n' && text->3=='v' && text->4=='a' && text->5=='d'
-	 && text->6=='e' && text->7==' ' && text->8=='s' && text->9=='p' && text->10=='a'
-     && text->11=='c' && text->12=='e')
+	if (text->1=='i' && text->2=='n' && text->3=='v' && text->4=='a' && text->5=='d' && text->6=='e')
 	{
 		parse0=SpaceInvaders();
 	}
