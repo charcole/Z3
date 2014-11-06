@@ -648,7 +648,16 @@ x=GetKey();
 @db 2*(1|2|4|8|16|32|64|128|256|512|1024|2048|4096);
 @db 2*(1|2|4|8|16|32|64|128|256|512|1024|2048|4096);
 @db 2*(1|2|4|8|16|32|64|128|256|512|1024|2048|4096);
-!base Offset:112
+!explosion Offset:112
+@db 4*(16|256);
+@db 4*(2|32|128|2048);
+@db 4*(4|1024);
+@db 4*(8|512);
+@db 4*(1|2|2048|4096);
+@db 4*(8|512);
+@db 4*(4|32|128|1024);
+@db 4*(2|16|256|2048);
+!base Offset:128
 @db $0FFF;
 @db $C000;
 @db $1FFF;
@@ -684,12 +693,12 @@ x=GetKey();
 ];
 
 [SpaceInvaders
-sprites x y i k s xd u a c sx t p delay l;
+sprites x y i k s xd u c sx t p l ud;
 
 !copy sprite data
 sprites=contextW-MaxTextSize/2;
 i=SpaceInvadersSpriteData;
-k=i+56;
+k=i+64;
 c=sprites;
 while (i<k)
 {
@@ -698,12 +707,12 @@ while (i<k)
 	c++;
 }
 !copy 4x bases as will get destroyed
-c=sprites+130;
+c=sprites+135;
 k=i+32;
 t=4;
 while (t)
 {
-	i=SpaceInvadersSpriteData+56;
+	i=SpaceInvadersSpriteData+64;
 	while (i<k)
 	{
 		0==>c=1-->i;
@@ -713,30 +722,21 @@ while (t)
 	t--;
 }
 
-! startX
-200==>sprites=8;
-202==>sprites=8;
-204==>sprites=8;
-206==>sprites=8;
-208==>sprites=8;
-! startY
-210==>sprites=16;
-212==>sprites=32;
-214==>sprites=48;
-216==>sprites=64;
-218==>sprites=80;
-!alive
-220==>sprites=$7ff;
-222==>sprites=$7ff;
-224==>sprites=$7ff;
-226==>sprites=$7ff;
-228==>sprites=$7ff;
-!bullet
-234==>sprites=0;
-240==>sprites=0;
-246==>sprites=0;
-252==>sprites=0;
-258==>sprites=0;
+s=sprites;
+k=s+5;
+t=16;
+c=234;
+while (s<k)
+{
+	190==>s=0; !dying
+	200==>s=8; !startX
+	210==>s=t; !startY
+	220==>s=$7ff; !alive
+	c==>sprites=0; !bullet direction
+	s++;
+	t=t+16;
+	c=c+6;
+}
 
 @write_reg $0050 0;
 @write_reg $0051 $EF;
@@ -746,8 +746,8 @@ while (t)
 xd=2;
 sx=115;
 l=3;
-delay=10000;
-while (218==>sprites<220 && delay>100 && l>0)
+ud=1;
+while (218==>sprites<220 && l>0)
 {
 	if (random(50)==1)
 	{
@@ -786,30 +786,68 @@ while (218==>sprites<220 && delay>100 && l>0)
 			}
 		}
 	}
-	
-	u--;
-	if (u<0)
-		u=4*4;
-	if (u&3==0)
+
+	ud--;
+	if (ud<=0)
 	{
-		t=u/4;
-		x=200==>(sprites+t);
-		x=x+xd;
-		if (x>54 || x<8)
+		k=0;	
+		do
 		{
-			y=210==>(sprites+t);
+			u--;
+			if (u<0)
+				u=4;
+			x=220==>(sprites+u);
+			k++;
+		} until (x || k>5);
+		if (~~x)
+		{
+			break; ! all enemies dead
+		}
+		if (x&$007)
+			ud++;
+		if (x&$038)
+			ud++;
+		if (x&$1C0)
+			ud++;
+		if (x&$600)
+			ud++;
+		k=5;
+		while (k)
+		{
+			k--;
+			x=x|220==>(sprites+k);
+		}
+		k=x;
+		c=8;
+		while (~~(x&1))
+		{
+			c=c-16;
+			x=x/2;
+		}
+		t=54;
+		while (~~(k&$400))
+		{
+			k=k*2;
+			t=t+16;
+		}
+		x=200==>(sprites+u)+xd;
+		if (x>t || x<c)
+		{
+			y=210==>(sprites+u);
 			@write_reg $0050 0;
 			@write_reg $0051 $EF;
 			@write_reg 32 0;
 			@write_reg 33 y;
 			@blit1 0 240 0 0;
-			210==>(sprites+t)=y+10;
-			if (t==0)
+			210==>(sprites+u)=y+10;
+			if (u==0)
 				xd=-xd;
+			if (y>207) !touched the ship row
+				l=0;
 		}
-		200==>(sprites+t)=x;
+		200==>(sprites+u)=x;
 	}
-	s=sprites+130;
+	s=sprites+135;
 	for (k=0: k<4: k++)
 	{
 		x=35+k*50;
@@ -825,7 +863,7 @@ while (218==>sprites<220 && delay>100 && l>0)
 	{
 		x=200==>(sprites+k);
 		y=210==>(sprites+k);
-		a=220==>(sprites+k);
+		p=220==>(sprites+k);
 		c=y/8;
 		c=(31-c)*32*64+c+1;
 		s=sprites;
@@ -844,12 +882,21 @@ while (218==>sprites<220 && delay>100 && l>0)
 			x=x+15;
 			@write_reg $0051 x;
 			x++;
-			if (a&t)
-				@blit1 s 16 0 c;
-			else
-				@blit1 s 16 0 0;
+			if (p&t)
+			{
+				if (190==>(sprites+k)&t)
+				{
+					@blit1 s 16 0 0;
+					p=p&~t;
+				}
+				else
+				{
+					@blit1 s 16 0 c;
+				}
+			}
 			t=t*2;
 		}
+		220==>(sprites+k)=p;
 	}
 	s=230;
 	for (k=0: k<5: k++)
@@ -870,6 +917,31 @@ while (218==>sprites<220 && delay>100 && l>0)
 				@write_reg 34 0;
 				@write_reg 34 0;
 			}
+			if (k) !not player bullet
+			{
+				if (234==>sprites)
+				{
+					t=232==>sprites;
+					if (y<=t && y+4>=t)
+					{
+						t=230==>sprites;
+						if (i<=t+2 && i>=t-2)
+						{
+							! two bullets hit
+							234==>sprites=0;
+							(s+4)==>sprites=0;
+							! erase player bullet
+							@write_reg 32 t;
+							@write_reg $50 t;
+							@write_reg $51 t;
+							t=232==>sprites;
+							@write_reg 33 t;
+							@write_reg 34 0;
+							@write_reg 34 0;
+						}
+					}
+				}
+			}
 			y=y+x;
 			(s+2)==>sprites=y;
 			if (x<0)
@@ -883,18 +955,28 @@ while (218==>sprites<220 && delay>100 && l>0)
 						if (t>=0 && t<11*16)
 						{
 							p=1;
+							c=0;
 							while (t>16)
 							{
 								p=p*2;
 								t=t-16;
+								c=c+16;
 							}
 							if (t>2 && t<14)
 							{
 								if (220==>(sprites+i)&p)
 								{
-									220==>(sprites+i)=220==>(sprites+i)&~p;
+									190==>(sprites+i)=190==>(sprites+i)|p;
 									(s+4)==>sprites=0;
-									delay=delay-180;
+									p=200==>(sprites+i)+c;
+									t=210==>(sprites+i);
+									@write_reg $0050 p;
+									@write_reg 32 p;
+									@write_reg 33 t;
+									p=p+15;
+									@write_reg $0051 p;
+									p=sprites+56;
+									@blit1 p 16 0 $f800;
 									break;
 								}
 							}
@@ -911,9 +993,9 @@ while (218==>sprites<220 && delay>100 && l>0)
 					t=t-i*50;
 					if (t<22)
 					{
-						k=260+(64*i)+(4*(y-195));
-						t=t+3;
-						while (t>=16)
+						k=(270-1)+(64*i)+(4*(y-195));
+						t=t+8;
+						while (t>=12)
 						{
 							t=t-8;
 							k=k++;
@@ -928,6 +1010,7 @@ while (218==>sprites<220 && delay>100 && l>0)
 						t=k==>sprites;
 						if (t&p)
 						{
+							p=p/8;
 							k==>sprites=t&~(p*31);
 							if (y<195+15)
 								(k+4)==>sprites=(k+4)==>sprites&~(p*31);
@@ -971,7 +1054,11 @@ while (218==>sprites<220 && delay>100 && l>0)
 		if (y<720)
 		{
 			@get_touch $95 -> x; ! x
-			if (x>512)
+			x=x-90;
+			x=x*2;
+			x=x/7;
+			x=x-7;
+			if (x>sx)
 				sx++;
 			else
 				sx--;
@@ -1005,7 +1092,7 @@ while (218==>sprites<220 && delay>100 && l>0)
 			@blit1 s 16 0 0;
 	}
 
-	x=delay;
+	x=8000; !Delay to keep game from running too fast
 	do
 	{
 		x--;
@@ -1359,6 +1446,8 @@ else if (text->0==6)
 	if (text->1=='i' && text->2=='n' && text->3=='v' && text->4=='a' && text->5=='d' && text->6=='e')
 	{
 		parse0=SpaceInvaders();
+		text->0=0;
+		text->1=0;
 	}
 }
 
