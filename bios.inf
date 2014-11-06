@@ -653,7 +653,7 @@ x=GetKey();
 @db 4*(2|32|128|2048);
 @db 4*(4|1024);
 @db 4*(8|512);
-@db 4*(1|2|2048|4096);
+@db 4*(1|2|2048); !|4096); Should really but messes with clear
 @db 4*(8|512);
 @db 4*(4|32|128|1024);
 @db 4*(2|16|256|2048);
@@ -693,7 +693,7 @@ x=GetKey();
 ];
 
 [SpaceInvaders
-sprites x y i k s xd u c sx t p l ud;
+sprites x y i k s xd u c sx t p l ud j;
 
 !copy sprite data
 sprites=contextW-MaxTextSize/2;
@@ -747,7 +747,7 @@ xd=2;
 sx=115;
 l=3;
 ud=1;
-while (218==>sprites<220 && l>0)
+while (l>0)
 {
 	if (random(50)==1)
 	{
@@ -759,13 +759,13 @@ while (218==>sprites<220 && l>0)
 			t=t*2;
 			k--;
 		}
-		x=208==>sprites+16*x;
 		s=228;
 		y=0;
 		for (k=0: k<5: k++)
 		{
 			if (s==>sprites&t)
 			{
+				x=(s-20)==>sprites+16*x;
 				y=(s-10)==>sprites+6;
 				break;
 			}
@@ -884,10 +884,19 @@ while (218==>sprites<220 && l>0)
 			x++;
 			if (p&t)
 			{
-				if (190==>(sprites+k)&t)
+				j=190==>(sprites+k);
+				if (j&t)
 				{
-					@blit1 s 16 0 0;
-					p=p&~t;
+					if (j&$8000)
+					{
+						@blit1 s 16 0 0;
+						p=p&~t;
+					}
+					else
+					{
+						j=sprites+56;
+						@blit1 j 16 0 c;
+					}
 				}
 				else
 				{
@@ -897,6 +906,15 @@ while (218==>sprites<220 && l>0)
 			t=t*2;
 		}
 		220==>(sprites+k)=p;
+		p=190==>(sprites+k);
+		if (p)
+		{
+			if (p&$8000)
+				p=0;
+			else
+				p=p+$1000;
+			190==>(sprites+k)=p;
+		}
 	}
 	s=230;
 	for (k=0: k<5: k++)
@@ -970,13 +988,6 @@ while (218==>sprites<220 && l>0)
 									(s+4)==>sprites=0;
 									p=200==>(sprites+i)+c;
 									t=210==>(sprites+i);
-									@write_reg $0050 p;
-									@write_reg 32 p;
-									@write_reg 33 t;
-									p=p+15;
-									@write_reg $0051 p;
-									p=sprites+56;
-									@blit1 p 16 0 $f800;
 									break;
 								}
 							}
@@ -1433,12 +1444,14 @@ do
 text->i=0;
 text->0=(i-1);
 
+i=0;
 if (text->0==10)
 {
 	if (text->1=='m' && text->2=='a' && text->3=='n' && text->4=='d' && text->5=='e'
 	 && text->6=='l' && text->7=='b' && text->8=='r' && text->9=='o' && text->10=='t')
 	{
 		parse0=Mandelbrot();
+		i=1;
 	}
 }
 else if (text->0==6)
@@ -1446,9 +1459,17 @@ else if (text->0==6)
 	if (text->1=='i' && text->2=='n' && text->3=='v' && text->4=='a' && text->5=='d' && text->6=='e')
 	{
 		parse0=SpaceInvaders();
-		text->0=0;
-		text->1=0;
+		i=1;
 	}
+}
+if (i)
+{
+	text->0=4;
+	text->1='w';
+	text->2='a';
+	text->3='i';
+	text->4='t';
+	text->5=0;
 }
 
 parse0=parse;
