@@ -353,23 +353,14 @@ rtrue;
 ];
 
 [DrawKeyboard
-size ptr line i shifted;
+size ptr line i;
 ! Use print system to make keyboard bitmaps then blit to screen
 for (i=0: i<2: i++)
 {
 	cTextSep==>contextW=i;
-	if (shifted)
-	{
-		@print " Q   |  W   |  E   |  R   |   T   |  Y   |  U   |   I   |  O   |  P^";
-		@print "      A  |   S   |  D   |  F   |  G   |  H   |   J   |  K   |   L^";
-		@print "          Z  |   X   |  C   |  V   |  B   |  N   |  M   |   ,^";
-	}
-	else
-	{
-		@print "  q  |   w  |   e   |  r   |   t   |   y  |   u   |   i   |  o   |   p^";
-		@print "      a  |   s   |  d   |   f   |   g  |   h   |  j   |   k   |   l^";
-		@print "          z  |   x   |  c   |   v  |   b   |  n   |  m   |   ,^";
-	}
+	@print "  q  |   w  |   e   |  r   |   t   |   y  |   u   |   i   |  o   |   p^";
+	@print "      a  |   s   |  d   |   f   |   g  |   h   |  j   |   k   |   l^";
+	@print "          z  |   x   |  c   |   v  |   b   |  n   |  m   |   ,^";
 	@print "        Delete         |        Space         |         Enter^";
 }
 cTextSep==>contextW=0;
@@ -657,39 +648,31 @@ x=GetKey();
 @db 4*(8|512);
 @db 4*(4|32|128|1024);
 @db 4*(2|16|256|2048);
-!base Offset:128
-@db $0FFF;
-@db $C000;
-@db $1FFF;
-@db $E000;
-@db $3FFF;
-@db $F000;
-@db $7FFF;
-@db $F800;
-@db $FFFF;
-@db $FC00;
-@db $FFFF;
-@db $FC00;
-@db $FFFF;
-@db $FC00;
-@db $FFFF;
-@db $FC00;
-@db $FFFF;
-@db $FC00;
-@db $FFFF;
-@db $FC00;
-@db $FFFF;
-@db $FC00;
-@db $FFFF;
-@db $FC00;
-@db $FE03;
-@db $FC00;
-@db $FC01;
-@db $FC00;
-@db $F800;
-@db $FC00;
-@db $F800;
-@db $FC00;
+!ufo Offset:128
+@db $03c0;
+@db $0ff0;
+@db $3ffc;
+@db $6db6;
+@db $ffff;
+@db $3bdc;
+@db $1008;
+!base Offset:142
+@db $0FFF; @db $C000;
+@db $1FFF; @db $E000;
+@db $3FFF; @db $F000;
+@db $7FFF; @db $F800;
+@db $FFFF; @db $FC00;
+@db $FFFF; @db $FC00;
+@db $FFFF; @db $FC00;
+@db $FFFF; @db $FC00;
+@db $FFFF; @db $FC00;
+@db $FFFF; @db $FC00;
+@db $FFFF; @db $FC00;
+@db $FFFF; @db $FC00;
+@db $FE03; @db $FC00;
+@db $FC01; @db $FC00;
+@db $F800; @db $FC00;
+@db $F800; @db $FC00;
 ];
 
 [SpaceInvaders
@@ -698,7 +681,7 @@ sprites x y i k s xd u c sx t p l ud j;
 !copy sprite data
 sprites=contextW-MaxTextSize/2;
 i=SpaceInvadersSpriteData;
-k=i+64;
+k=i+71;
 c=sprites;
 while (i<k)
 {
@@ -712,7 +695,7 @@ k=i+32;
 t=4;
 while (t)
 {
-	i=SpaceInvadersSpriteData+64;
+	i=SpaceInvadersSpriteData+71;
 	while (i<k)
 	{
 		0==>c=1-->i;
@@ -724,7 +707,7 @@ while (t)
 
 s=sprites;
 k=s+5;
-t=16;
+t=26;
 c=234;
 while (s<k)
 {
@@ -737,6 +720,9 @@ while (s<k)
 	t=t+16;
 	c=c+6;
 }
+184==>sprites=0; ! dead timer
+186==>sprites=0; ! ufo dead timer
+188==>sprites=255; ! ufo position
 
 @write_reg $0050 0;
 @write_reg $0051 $EF;
@@ -747,9 +733,9 @@ xd=2;
 sx=115;
 l=3;
 ud=1;
-while (l>0)
+while (1)
 {
-	if (random(50)==1)
+	if (random(50)==1 && ~~184==>sprites)
 	{
 		x=random(11)-1;
 		k=x;
@@ -787,6 +773,51 @@ while (l>0)
 		}
 	}
 
+	x=188==>sprites;
+	if (x<240-16)
+	{
+		i=2;
+		while (i)
+		{
+			@write_reg $0050 x;
+			@write_reg 32 x;
+			y=x+15;
+			@write_reg $0051 y;
+			@write_reg 33 16;
+			i--;
+			if (i)
+			{
+				@blit1 0 14 0 0;
+				x++;
+				188==>sprites=x;
+				if (x>=240-16)
+					break;
+			}
+			else
+			{
+				s=sprites+64;
+				x=186==>sprites;
+				k=$f800;
+				if (x)
+				{
+					s=sprites+56;
+					x--;
+					186==>sprites=x;
+					if (~~x)
+					{
+						188==>sprites=255;
+						k=0;
+					}
+				}
+				@blit1 s 14 0 k;
+			}
+		}
+	}
+	else if (random(2000)==1)
+	{
+		188==>sprites=0;
+	}
+
 	ud--;
 	if (ud<=0)
 	{
@@ -815,7 +846,10 @@ while (l>0)
 		while (k)
 		{
 			k--;
-			x=x|220==>(sprites+k);
+			t=220==>(sprites+k);
+			if (t)
+				j=k;
+			x=x|t;
 		}
 		k=x;
 		c=8;
@@ -840,10 +874,16 @@ while (l>0)
 			@write_reg 33 y;
 			@blit1 0 240 0 0;
 			210==>(sprites+u)=y+10;
-			if (u==0)
+			if (u==j)
 				xd=-xd;
-			if (y>207) !touched the ship row
+			if (y>202) !touched the ship row
+			{
+				if (~~184==>sprites)
+				{
+					184==>sprites=150;
+				}
 				l=0;
+			}
 		}
 		200==>(sprites+u)=x;
 	}
@@ -917,8 +957,11 @@ while (l>0)
 		}
 	}
 	s=230;
-	for (k=0: k<5: k++)
+	for (j=-3: j<5: j++)
 	{
+		k=j;
+		if (k<0)
+			k=0;
 		x=(s+4)==>sprites;
 		if (x)
 		{
@@ -1005,7 +1048,7 @@ while (l>0)
 					if (t<22)
 					{
 						k=(270-1)+(64*i)+(4*(y-195));
-						t=t+8;
+						t=t+7;
 						while (t>=12)
 						{
 							t=t-8;
@@ -1022,15 +1065,15 @@ while (l>0)
 						if (t&p)
 						{
 							p=p/8;
-							k==>sprites=t&~(p*31);
+							k==>sprites=t&~(p*(1|2|4|8|16));
 							if (y<195+15)
-								(k+4)==>sprites=(k+4)==>sprites&~(p*31);
+								(k+4)==>sprites=(k+4)==>sprites&~(p*(2|4|8));
 							if (y<195+14)
-								(k+8)==>sprites=(k+8)==>sprites&~(p*7*2);
+								(k+8)==>sprites=(k+8)==>sprites&~(p*(1|4|16));
 							if (y>195)
-								(k-4)==>sprites=(k-4)==>sprites&~(p*31);
+								(k-4)==>sprites=(k-4)==>sprites&~(p*(2|4|8));
 							if (y>196)
-								(k-8)==>sprites=(k-8)==>sprites&~(p*7*2);
+								(k-8)==>sprites=(k-8)==>sprites&~(p*(1|4|16));
 							(s+4)==>sprites=0;
 						}
 					}
@@ -1040,7 +1083,17 @@ while (l>0)
 			if (x>0 && i>sx+1 && i<sx+15 && y>=220 && y<217+8)
 			{
 				(s+4)==>sprites=0;
-				l--;
+				if (~~184==>sprites)
+				{
+					184==>sprites=150;
+					l--;
+				}
+			}
+			;
+			if (x<0 && y>=16 && y<=16+7 && i>=188==>sprites && i<188==>sprites+16)
+			{
+				(s+4)==>sprites=0;
+				186==>sprites=8;
 			}
 			if (y>=217+8 || y<=StatusHeight)
 				(s+4)==>sprites=0;
@@ -1056,29 +1109,33 @@ while (l>0)
 				}
 			}
 		}
-		s=s+6;
+		if (j>=0)
+			s=s+6;
 	}
-	@get_touch $93 -> x;
-	if (x<1000)
+	if (~~184==>sprites)
 	{
-		@get_touch $1A -> y; ! y
-		if (y<720)
+		@get_touch $93 -> x;
+		if (x<1000)
 		{
-			@get_touch $95 -> x; ! x
-			x=x-90;
-			x=x*2;
-			x=x/7;
-			x=x-7;
-			if (x>sx)
-				sx++;
-			else
-				sx--;
-		}
-		else if (234==>sprites==0)
-		{
-			230==>sprites=sx+8;
-			232==>sprites=217;
-			234==>sprites=-4;
+			@get_touch $1A -> y; ! y
+			if (y<720)
+			{
+				@get_touch $95 -> x; ! x
+				x=x-90;
+				x=x*2;
+				x=x/7;
+				x=x-7;
+				if (x>sx)
+					sx++;
+				else
+					sx--;
+			}
+			else if (234==>sprites==0)
+			{
+				230==>sprites=sx+8;
+				232==>sprites=217;
+				234==>sprites=-1;
+			}
 		}
 	}
 	@write_reg $0050 sx;
@@ -1087,8 +1144,22 @@ while (l>0)
 	@write_reg $0051 x;
 	@write_reg 33 218;
 	s=sprites+96/2;
-	@blit1 s 16 0 $7E0;
+	k=$7e0;
+	if (184==>sprites)
+	{
+		if (184==>sprites>130)
+			s=sprites+56;
+		else
+			k=0;
+		184==>sprites=184==>sprites-1;
+	}
+	else if (l<=0)
+	{
+		break;
+	}
+	@blit1 s 16 0 k;
 
+	s=sprites+96/2;
 	for (k=0: k<3: k++)
 	{
 		x=10+16*k;
@@ -1103,7 +1174,7 @@ while (l>0)
 			@blit1 s 16 0 0;
 	}
 
-	x=8000; !Delay to keep game from running too fast
+	x=7500; !Delay to keep game from running too fast
 	do
 	{
 		x--;
@@ -1113,9 +1184,9 @@ while (l>0)
 @write_reg $0050 0;
 @write_reg $0051 $EF;
 if (l>0)
-	@print "God job! You won!^^";
+	@print "You win!^^";
 else
-	@print "Bad luck, you failed :(^^";
+	@print "Bad luck.^^";
 ];
 
 [SysInit
