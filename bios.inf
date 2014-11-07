@@ -355,13 +355,17 @@ rtrue;
 [DrawKeyboard
 size ptr line i;
 ! Use print system to make keyboard bitmaps then blit to screen
-for (i=0: i<2: i++)
+for (: i<2: i++)
 {
 	cTextSep==>contextW=i;
-	@print "  q  |   w  |   e   |  r   |   t   |   y  |   u   |   i   |  o   |   p^";
-	@print "      a  |   s   |  d   |   f   |   g  |   h   |  j   |   k   |   l^";
-	@print "          z  |   x   |  c   |   v  |   b   |  n   |  m   |   ,^";
-	@print "        Delete         |        Space         |         Enter^";
+	@print "  q   |  w   |   e   |   r   |   t   |   y   |   u   |    i   |   o   |   p^";
+	@print "      a   |   s   |   d   |   f   |   g   |   h   |   j   |   k   |   l^";
+	@print "          z   |   x   |   c   |   v   |   b   |   n   |  m   |   ,^";
+	@print "         Delete         |          Space         |          Enter^";
+	!@print "  q  |   w  |   e   |  r   |   t   |   y  |   u   |   i   |  o   |   p^";
+	!@print "      a  |   s   |  d   |   f   |   g  |   h   |  j   |   k   |   l^";
+	!@print "          z  |   x   |  c   |   v  |   b   |  n   |  m   |   ,^";
+	!@print "        Delete         |        Space         |         Enter^";
 }
 cTextSep==>contextW=0;
 @write_reg 32 0;
@@ -407,7 +411,6 @@ cScrenY==>contextW=0;
 palette
 imageO imageP c col count p x y winW winWMax;
 
-y=0;
 c=320;
 @write_reg 32 0;
 @write_reg 33 0;
@@ -1196,6 +1199,7 @@ temp=InitScreenRegs();
 if (~~($FFFF->$E580))
 	temp=GameSelect($B400);
 temp=DrawKeyboard();
+@new_line;
 ];
 
 [FindInDictionary
@@ -1492,7 +1496,6 @@ c=cScrenX==>contextW;
 sep=cScrenY==>contextW;
 dict=cScroll==>contextW;
 
-i=0;
 do
 {
 	i++;

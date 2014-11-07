@@ -1,4 +1,5 @@
 #include <ft2build.h>
+#include "zfont2.h"
 #include FT_FREETYPE_H
 
 unsigned char data[128][10];
@@ -127,7 +128,53 @@ void fontLoad(const char *ttfFont)
 					(data[i][y+1]&1)==0?0:1);
 		}
 	}
-			
+	
+	{
+		int waiting=0;
+		int i=32;
+		int x;
+		memset(data, 0, sizeof(data));
+		for (x=0; x<width; x++)
+		{
+			if (header_data[10*width+x])
+			{
+				int k;
+				for (k=1; k<10; k++)
+				{
+					data[i][k]=data[i][k]<<1;
+					data[i][k]|=header_data[k*width+x];
+				}
+				data[i][0]++;
+				waiting=0;
+			}
+			else if (!waiting)
+			{
+				int y=0;
+				for (y=1; y<10; y++)
+				{
+					data[i][y]<<=8-data[i][0];
+				}
+				data[i][0]++;
+				printf("%d(%c):\n", i, i);
+				printf("Adv: %d\n", data[i][0]);
+				for (y=0; y<9; y++)
+				{
+					printf("%d%d%d%d%d%d%d%d\n",
+							(data[i][y+1]&128)==0?0:1,
+							(data[i][y+1]&64)==0?0:1,
+							(data[i][y+1]&32)==0?0:1,
+							(data[i][y+1]&16)==0?0:1,
+							(data[i][y+1]&8)==0?0:1,
+							(data[i][y+1]&4)==0?0:1,
+							(data[i][y+1]&2)==0?0:1,
+							(data[i][y+1]&1)==0?0:1);
+				}
+				i++;
+				waiting=1;	
+			}
+		}
+	}
+
 	{
 		char outputBuffer[1024];
 		int s=240/20;
@@ -145,7 +192,7 @@ void fontLoad(const char *ttfFont)
 		calculateKeyboard(outputBuffer, "Z|X|C|V|B|N|M|,", s);
 		printf("@print \"%s\n\";\n", outputBuffer);
 		s=40;
-		calculateKeyboard(outputBuffer, "Shift|Space|Enter", s);
+		calculateKeyboard(outputBuffer, "Delete|Space|Enter", s);
 		printf("@print \"%s\n\";\n", outputBuffer);
 	}
 }
