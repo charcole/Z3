@@ -153,7 +153,7 @@ void WriteMemDyn(int addr, byte val)
 {
 	if (addr>=0x10000)
 	{
-		if (forceDynamic)
+		if (1)//forceDynamic)
 			biosRAM[addr-0x10000]=val;
 		else
 		{

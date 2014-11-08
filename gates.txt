@@ -87,8 +87,7 @@
 4555 (99%)		- 1 cycle @dynamic, faster function calls + stream draw
 
 Todo:
-- Paging (Software)
-- Arcade Game? (Software)
+- Video to show it off
 
 Touch screen
 

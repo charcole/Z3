@@ -26,6 +26,7 @@ Constant cTextO		  = 20;
 Constant cTextB		  = 22;
 Constant cTextSep	  = 24;
 Constant cScrollStart = 26;
+Constant cLastScroll  = 28;
 Constant MaxTextSize  = $400;
 
 Constant contextW     = $D800; ! $1B000
@@ -59,7 +60,6 @@ outputO=cTextO==>contextW;
 outputB=cTextB==>contextW;
 encodingO=cEncodO==>contextW;
 encodingB=cEncodB==>contextW;
-alpha=0;
 do
 {
 	charWord = inputO-->inputW;
@@ -171,9 +171,17 @@ while (char)
 		if (y>(KeyboardStartLine-StatusHeight)-TextHeight || cScrollStart==>contextW)
 		{
 			cScrollStart==>contextW=1;
-			cScroll==>contextW=cScroll==>contextW+TextHeight;
-			if (cScroll==>contextW>=BufferHeight)
-				cScroll==>contextW=0;
+			a=cScroll==>contextW;
+			a=a+TextHeight;
+			if (a>=BufferHeight)
+				a=0;
+			if (a==cLastScroll==>contextW)
+			{
+				cScrenY==>contextW=y;
+				b=UpdateScreen();
+				b=GetKey();
+			}
+			cScroll==>contextW=a;
 		}
 		a=y*LineStride;
 		b=LineStride*5;
@@ -215,25 +223,28 @@ cScrenY==>contextW=y;
 ];
 
 [UpdateScreen
-ptr size sizeW; !temps
+ptr size sizeW bitmapW scroll; !temps
+	bitmapW=cBitMpW==>contextW;
+	scroll=cScroll==>contextW;
+	cLastScroll==>contextW=cScrenY==>contextW;
 	@write_reg 32 0;
 	@write_reg 33 0;
 	@blit1 0 LineStride $49c2 $49c2;
 	@write_reg 32 0;
 	@write_reg 33 1;
-	ptr=(cBitMpW==>contextW)+(LineStrideW*BufferHeight);
+	ptr=bitmapW+(LineStrideW*BufferHeight);
 	sizeW=LineStride*(StatusHeight-1);
 	@blit1 ptr sizeW $49c2 $ff14;
 	@write_reg 32 0;
 	@write_reg 33 StatusHeight;
-	ptr=(cBitMpW==>contextW)+(LineStrideW*(cScroll==>contextW));
+	ptr=bitmapW+(LineStrideW*scroll);
 	sizeW=LineStride*(KeyboardStartLine-StatusHeight);
-	if ((cScroll==>contextW) + (KeyboardStartLine-StatusHeight) > BufferHeight)
+	if (scroll > BufferHeight - (KeyboardStartLine-StatusHeight))
 	{
-		size=BufferHeight-(cScroll==>contextW);
+		size=BufferHeight-scroll;
 		sizeW=LineStride*size;
 		@blit1 ptr sizeW $ff14 $49c2;
-		ptr=cBitMpW==>contextW;
+		ptr=bitmapW;
 		size=size+StatusHeight;
 		@write_reg 32 0;
 		@write_reg 33 size;
@@ -286,15 +297,16 @@ cAbbrev==>contextW=$18-->0;
 cEncodO==>contextW=$FFFF; !1E500
 cEncodB==>contextW=$E501;
 cScrenX==>contextW=Border;
-cScrenY==>contextW=0;
+!cScrenY==>contextW=0;
 cFontO ==>contextW=$FFFF; ! $1E000
 cFontB ==>contextW=$E001;
 cBitMpW==>contextW=-(BufferHeight+StatusHeight)*LineStrideW;
-cScroll==>contextW=0;
+!cScroll==>contextW=0;
 cTextO==>contextW=cBitMpW==>contextW;
 cTextB==>contextW=cBitMpW==>contextW-MaxTextSize;
-cTextSep==>contextW=0;
-cScrollStart==>contextW=0;
+!cTextSep==>contextW=0;
+!cScrollStart==>contextW=0;
+!cLastScroll==>contextW=0;
 ];
 
 [SysPrint
@@ -1336,7 +1348,7 @@ cScrenY==>contextW=y;
 [GetKey
 x y
 startY scrollStart scrollLimit scroll temp;
-
+			
 startY=1024;
 scrollLimit=cScroll==>contextW;
 while (1)
@@ -1375,69 +1387,69 @@ while (1)
 	@get_touch $1A -> y; ! y
 	if (y>=870)
 	{
-		if (x<=365)	! delete
+		if (x<=374)	! delete
 			return 0;
-		if (x<=650)
+		if (x<=649)
 			return ' ';
 		return 10;
 	}
 	else if (y>=820)
 		{
-			if (x<=250)
+			if (x<=256)
 				return 'z';
-			if (x<=330)
+			if (x<=340)
 				return 'x';
-			if (x<=420)
+			if (x<=423)
 				return 'c';
-			if (x<=500)
+			if (x<=506)
 				return 'v';
 			if (x<=590)
 				return 'b';
-			if (x<=680)
+			if (x<=673)
 				return 'n';
-			if (x<=765)
+			if (x<=753)
 				return 'm';
 			return ',';
 		}
 	else if (y>=770)
 	{
-		if (x<=205)
+		if (x<=215)
 			return 'a';
-		if (x<=300)
+		if (x<=298)
 			return 's';
-		if (x<=370)
+		if (x<=381)
 			return 'd';
-		if (x<=460)
+		if (x<=465)
 			return 'f';
-		if (x<=540)
+		if (x<=548)
 			return 'g';
-		if (x<=635)
+		if (x<=631)
 			return 'h';
-		if (x<=715)
+		if (x<=711)
 			return 'j';
-		if (x<=805)
+		if (x<=794)
 			return 'k';
 		return 'l';
 	}
 	else if (y>=720)
 	{
-		if (x<=170)
+		if (x<=173)
 			return 'q';
-		if (x<=250)
+		if (x<=253)
 			return 'w';
-		if (x<=340)
+		if (x<=336)
 			return 'e';
-		if (x<=420)
+		if (x<=416)
 			return 'r';
-		if (x<=500)
+		if (x<=499)
 			return 't';
-		if (x<=590)
+		if (x<=583)
 			return 'y';
-		if (x<=680)
+		if (x<=666)
 			return 'u';
-		if (x<=765)
+		if (x<=753)
 			return 'i';
-		if (x<=840)
+		if (x<=836)
 			return 'o';
 		return 'p';
 	}
