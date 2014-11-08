@@ -9,7 +9,8 @@ Constant KeyboardStartLine		= 240;
 Constant KeyboardTextSpacing	= 20;
 Constant KeyboardSepSpacing		= 5;
 Constant StatusHeight = 10;
-Constant ScoreXOffset = (240-Border-26-28-5-5-5-1);
+!                                    S c o r e : 0     M o v e s : 0
+Constant ScoreXOffset = (240-Border-(4+5+4+3+4+2+4)-(3+6+4+4+4+4+2+4));
 
 Constant DictionaryOff = 8;
 
@@ -374,10 +375,6 @@ for (: i<2: i++)
 	@print "      a   |   s   |   d   |   f   |   g   |   h   |   j   |   k   |   l^";
 	@print "          z   |   x   |   c   |   v   |   b   |   n   |  m   |   ,^";
 	@print "         Delete         |          Space         |          Enter^";
-	!@print "  q  |   w  |   e   |  r   |   t   |   y  |   u   |   i   |  o   |   p^";
-	!@print "      a  |   s   |  d   |   f   |   g  |   h   |  j   |   k   |   l^";
-	!@print "          z  |   x   |  c   |   v  |   b   |  n   |  m   |   ,^";
-	!@print "        Delete         |        Space         |         Enter^";
 }
 cTextSep==>contextW=0;
 @write_reg 32 0;
@@ -447,23 +444,17 @@ imageO=$FFFF;
 p=4;
 while (p)
 {
+	winW=127;
+	winWMax=226;
 	if (p&1)
 	{
 		winW=13;
 		winWMax=112;
 	}
-	else
-	{
-		winW=127;
-		winWMax=226;
-	}
+	y=167;
 	if (p&2)
 	{
 		y=33;
-	}
-	else
-	{
-		y=167;
 	}
 	@write_reg $0050 winW;
 	@write_reg $0051 winWMax;
@@ -520,38 +511,14 @@ if (p>0)
 
 [MandelbrotPalette;
 @db 0;
-@db 63488;
-@db 63488;
-@db 63488;
-@db 63488;
-@db 63488;
-@db 63488;
-@db 64000;
-@db 65280;
-@db 64512;
-@db 63744;
-@db 65152;
-@db 64384;
-@db 65408;
-@db 57216;
-@db 49024;
-@db 32640;
-@db 24448;
-@db 16256;
-@db 8064;
-@db 8068;
-@db 8073;
-@db 8078;
-@db 8083;
-@db 8089;
-@db 8094;
-@db 7327;
-@db 5919;
-@db 4639;
-@db 3359;
-@db 2079;
-@db 799;
-@db 4127;
+@db $f800; @db $fb80; @db $f800; @db $fc00;
+@db $f800; @db $fc00; @db $f800; @db $fc00;
+@db $ff80; @db $df80; @db $bf80; @db $9f80;
+@db $7f80; @db $5f80; @db $3f80; @db $1f80;
+@db $1f81; @db $1f85; @db $1f89; @db $1f8d;
+@db $1f91; @db $1f96; @db $1f9a; @db $1f9e;
+@db $1d9f; @db $191f; @db $151f; @db $111f;
+@db $0d1f; @db $091f; @db $049f; @db $009f;
 ];
 
 [Mandelbrot
@@ -570,12 +537,22 @@ do
 		x=0;
 		y=0;
 		i=0;
-		x00=x0*40;
+		x00=x0*20;
 		do
 		{
 			xtemp=xtemp-ytemp+y00;
-			y=(2*x*y+x00)/64;
+			y=(x*y+x00)/32;
+			if (y>=2*64 || y<=-2*64)
+			{
+				i++;
+				break;
+			}
 			x=xtemp/64;
+			if (x>=2*64 || x<=-2*64)
+			{
+				i++;
+				break;
+			}
 			xtemp=x*x;
 			ytemp=y*y;
 			i++;
@@ -1325,17 +1302,17 @@ cScrenY==>contextW=BufferHeight;
 @print_obj sys__glob0;
 scoreX=ScoreXOffset;
 if (sys__glob1>=1000)
-	scoreX=scoreX-15;
+	scoreX=scoreX-12;
 else if (sys__glob1>=100)
-	scoreX=scoreX-10;
+	scoreX=scoreX-8;
 else if (sys__glob1>=10)
-	scoreX=scoreX-5;
+	scoreX=scoreX-4;
 if (sys__glob2>=1000)
-	scoreX=scoreX-15;
+	scoreX=scoreX-12;
 else if (sys__glob2>=100)
-	scoreX=scoreX-10;
+	scoreX=scoreX-8;
 else if (sys__glob2>=10)
-	scoreX=scoreX-5;
+	scoreX=scoreX-4;
 cScrenX==>contextW=scoreX;
 print "Score:";
 @print_num sys__glob1;
@@ -1347,7 +1324,7 @@ cScrenY==>contextW=y;
 
 [GetKey
 x y
-startY scrollStart scrollLimit scroll temp;
+startY scrollStart scrollLimit scroll;
 			
 startY=1024;
 scrollLimit=cScroll==>contextW;
@@ -1369,7 +1346,7 @@ while (1)
 				scroll=-BufferHeight+KeyboardStartLine-StatusHeight;
 			}
 			cScroll==>contextW=((scrollLimit+scroll+BufferHeight+BufferHeight)%BufferHeight);
-			temp=UpdateScreen();
+			x=UpdateScreen();
 		}
 		@get_touch $93 -> x;
 	} until (x>=1000);
