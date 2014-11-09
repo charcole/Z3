@@ -1,0 +1,21 @@
+1.83 -> 11.57 = 9.74s x10 Ackermann => 0.97s for Ackermann
+12.64 -> 22.88 = 10.24s x100 Sieve => 1.02s for x10 Sieve
+
+10x Sieve
+
+Acorn Archimedes 8Mz ARM2 + Acorn C       0.5
+IBM AT (6Mhz) 286 C Compiler	 		  0.7
+** 10MHz Z3 Inform 6 **					  1.0
+VAX 11/780						 		  1.4
+10Mhz 8086 + Lattice			 		  3.6
+IBM PC (5Mhz) Assembly			 		  4.0
+8Mhz 68000 DR C Compiler		 		  6.0
+Apple II Assembly						 13.9
+
+Ackermann(3,6)
+
+** 10MHz Z3 Inform 6 **					  1.0
+10MHz ERC (Sparc V7) C					  1.1
+RISC I 7.6MHz							  3.2
+VAX 11/780 5MHz							  5.1
+Z8002 6MHz								  9.0

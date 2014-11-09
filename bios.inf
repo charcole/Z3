@@ -380,8 +380,9 @@ cTextSep==>contextW=0;
 @write_reg 32 0;
 size=LineStride*TextHeight;
 ptr=cBitMpW==>contextW;
+i=ptr+4*TextHeight*LineStrideW;
 line=KeyboardStartLine+1+KeyboardSepSpacing;
-for (i=0: i<4: i=i+1)
+while (ptr<i)
 {
 	@write_reg 33 line;
 	@blit1 ptr size $22b0 $d75f;
@@ -390,7 +391,8 @@ for (i=0: i<4: i=i+1)
 }
 size=LineStride*KeyboardSepSpacing;
 line=KeyboardStartLine+1;
-for (i=0: i<4: i=i+1)
+i=ptr+4*TextHeight*LineStrideW;
+while (ptr<i)
 {
 	@write_reg 33 line;
 	@blit1 ptr size $22b0 $d75f;
@@ -401,17 +403,20 @@ for (i=0: i<4: i=i+1)
 	ptr=ptr+TextHeight*LineStrideW;
 }
 line=KeyboardStartLine;
+i=line+4*(TextHeight+2*KeyboardSepSpacing);
 size=LineStride;
-for (i=0: i<4: i=i+1)
+while (line<i)
 {
 	@write_reg 33 line;
 	@blit1 ptr size $d75f $d75f;
 	line=line+TextHeight+2*KeyboardSepSpacing;
 }
 ptr=cBitMpW==>contextW;
-for (i=0: i<LineStride*TextHeight*8: i=i+2)
+i=ptr+LineStrideW*TextHeight*8;
+while (ptr<i)
 {
-	i==>ptr=0;
+	0==>ptr=0;
+	ptr++;
 }
 cScrenY==>contextW=0;
 ];
@@ -534,28 +539,21 @@ do
 	{
 		xtemp=0;
 		ytemp=0;
-		x=0;
 		y=0;
 		i=0;
 		x00=x0*20;
 		do
 		{
+			i++;
 			xtemp=xtemp-ytemp+y00;
 			y=(x*y+x00)/32;
 			if (y>=2*64 || y<=-2*64)
-			{
-				i++;
 				break;
-			}
 			x=xtemp/64;
 			if (x>=2*64 || x<=-2*64)
-			{
-				i++;
 				break;
-			}
 			xtemp=x*x;
 			ytemp=y*y;
-			i++;
 		} until ( xtemp + ytemp >= 64*64*4 || i>=32);
 		i=1-->(i+MandelbrotPalette);
 		@write_reg 34 i;
@@ -1189,6 +1187,9 @@ if (~~($FFFF->$E580))
 	temp=GameSelect($B400);
 temp=DrawKeyboard();
 @new_line;
+! Set flags
+0->1=(0->1&$8f)|$40; ! Status line availible, Screen splitting not availible + variable pitch font
+0->10=0->10&$fe; ! Transcripting off
 ];
 
 [FindInDictionary
@@ -1598,23 +1599,28 @@ temp=UpdateStatus();
 temp=UpdateScreen();
 ];
 
-[SysQuit
+[PressKeyToReboot
 temp;
-@print "^[Quit. Press any key to reboot]";
+@print "Press any key to reboot]";
 temp=UpdateScreen();
 temp=GetKey();
 @switch_bank 0;
 ];
 
+[SysQuit
+temp;
+@print "^[Quit. ";
+temp=PressKeyToReboot();
+];
+
 [SysException
 pc oper0 oper1;
-@print "[Exception PC/2=";
+@print "^[Exception PC/2=";
 @print_num pc;
 @print " OP0=";
 @print_num oper0;
 @print " OP1=";
 @print_num oper1;
-@print "]^[Press any key to reboot]";
-pc=GetKey();
-@switch_bank 0;
+@print "]^[";
+pc=PressKeyToReboot();
 ];
