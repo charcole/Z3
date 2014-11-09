@@ -3,7 +3,11 @@ BUILDING THE BIOS
 
 TO BUILD PATCHED INFORM 6
 
-todo.
+Clone the git repository of...
+https://github.com/charcole/Inform6.git
+
+git checkout inform6b
+clang -O3 *.c -o inform6b.out
 
 
 ASSEMBLE THE ROM
