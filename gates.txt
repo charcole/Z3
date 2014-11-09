@@ -85,35 +85,3 @@
 4550 (99%)		- Removed wasted cycle when storing results on some ops
 4580 (99%)		- Added last stored variable cache
 4555 (99%)		- 1 cycle @dynamic, faster function calls + stream draw
-
-Todo:
-- Video to show it off
-
-Touch screen
-
-
-SenseY=+5 or sense
-SenseX=+5 or sense
-DY=Z/GND;
-DX=Z/GND/+5;
-
-   GND
-Sense/Z
-    +5
-
-  Sense
- +5/GND
-   Z
-
-   Sense
- Sense/GND
-    +5
-
-Moya
-Ellie/Ally
-Laura
-Nicky
-Sue
-Faith
-Sucan
-Jeff
