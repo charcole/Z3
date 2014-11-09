@@ -273,10 +273,390 @@ do
 @show_status;
 ];
 
+Constant Number_Of_Runs = 10000;
+
+Constant Ident_1 = 0;
+Constant Ident_2 = 1;
+Constant Ident_3 = 2;
+Constant Ident_4 = 3;
+Constant Ident_5 = 4;
+
+Constant Ptr_Comp=0;
+Constant Discr=1;
+Constant Enum_Comp=2;
+Constant Int_Comp=3;
+Constant Str_Comp=8;
+Constant E_Comp_2=2;
+Constant Str_2_Comp=6;
+Constant Ch_1_Comp=4;
+Constant Ch_2_Comp=5;
+Constant RecSize=Str_Comp+31;
+
+Array String1->   'D' 'H' 'R' 'Y' 'S' 'T' 'O' 'N' 'E' ' ' 'P' 'R' 'O' 'G' 'R' 'A' 'M' ',' ' ' '1' ''' 'S' 'T' ' ' 'S' 'T' 'R' 'I' 'N' 'G' 0; 
+Array String2->   'D' 'H' 'R' 'Y' 'S' 'T' 'O' 'N' 'E' ' ' 'P' 'R' 'O' 'G' 'R' 'A' 'M' ',' ' ' '2' ''' 'N' 'D' ' ' 'S' 'T' 'R' 'I' 'N' 'G' 0;
+Array String3->   'D' 'H' 'R' 'Y' 'S' 'T' 'O' 'N' 'E' ' ' 'P' 'R' 'O' 'G' 'R' 'A' 'M' ',' ' ' '3' ''' 'R' 'D' ' ' 'S' 'T' 'R' 'I' 'N' 'G' 0;
+Array SomeString->'D' 'H' 'R' 'Y' 'S' 'T' 'O' 'N' 'E' ' ' 'P' 'R' 'O' 'G' 'R' 'A' 'M' ',' ' ' 'S' 'O' 'M' 'E' ' ' 'S' 'T' 'R' 'I' 'N' 'G' 0;
+Array Str_1_Loc_Space->31;
+Array Str_2_Loc_Space->31;
+Array Arr_1_Glob-->50;
+Array Arr_2_Glob-->2500;
+Array Ptr_Glob->RecSize;
+Array Next_Ptr_Glob->RecSize;
+Global Int_Glob;
+Global Bool_Glob;
+Global Ch_1_Glob;
+Global Ch_2_Glob;
+
+[strcmp
+a b c1 c2 i;
+while (1)
+{
+	c1=i->a;
+	c2=i->b;
+	if (c1~=c2 || c1*c2==0)
+		return c1-c2;
+	i++;
+}
+];
+
+[strcpy
+a b i;
+while (b->i)
+{
+	a->i=b->i;
+	i++;
+}
+a->i=0;
+];
+
+[memcpy
+a b i;
+while (i)
+{
+	i--;
+	a->i=b->i;
+}
+];
+
+[PrintString
+a i;
+while (a->0)
+{
+	i=a->0;
+	@print_char i;
+	a++;
+}
+];
+
+[Func_1
+Ch_1_Par_Val Ch_2_Par_Val
+Ch_1_Loc Ch_2_Loc;
+
+Ch_1_Loc = Ch_1_Par_Val;
+Ch_2_Loc = Ch_1_Loc;
+if (Ch_2_Loc ~= Ch_2_Par_Val)
+	return (Ident_1);
+else
+{
+	Ch_1_Glob = Ch_1_Loc;
+	return (Ident_2);
+}
+];
+
+[Func_2
+Str_1_Par_Ref Str_2_Par_Ref
+Int_Loc Ch_Loc;
+
+Int_Loc = 2;
+while (Int_Loc <= 2)
+{
+	if (Func_1 (Str_1_Par_Ref->Int_Loc,
+				Str_2_Par_Ref->(Int_Loc+1)) == Ident_1)
+	{
+		Ch_Loc = 'A';
+		Int_Loc ++;
+	}
+}
+if (Ch_Loc >= 'W' && Ch_Loc < 'Z')
+	Int_Loc = 7;
+if (Ch_Loc == 'R')
+	return 1;
+else
+{
+	if (strcmp (Str_1_Par_Ref, Str_2_Par_Ref) > 0)
+	{
+		Int_Loc = Int_Loc + 7;
+		Int_Glob = Int_Loc;
+		return 1;
+	}
+	else
+		return 0;
+}
+];
+
+[Func_3
+Enum_Par_Val
+Enum_Loc;
+
+  Enum_Loc = Enum_Par_Val;
+  if (Enum_Loc == Ident_3)
+    return 1;
+  else
+    return 0;
+];
+
+[Proc_1
+Ptr_Val_Par
+Next_Record;
+  Next_Record = Ptr_Val_Par-->Ptr_Comp;
+  memcpy(Ptr_Val_Par-->Ptr_Comp, Ptr_Glob, RecSize); 
+  Ptr_Val_Par-->Int_Comp = 5;
+  Next_Record-->Int_Comp 
+        = Ptr_Val_Par-->Int_Comp;
+  Next_Record-->Ptr_Comp = Ptr_Val_Par-->Ptr_Comp;
+  Proc_3 (Next_Record+2*Ptr_Comp);
+  if (Next_Record-->Discr == Ident_1)
+  {
+    Next_Record-->Int_Comp = 6;
+    Next_Record-->Enum_Comp=Proc_6 (Ptr_Val_Par-->Enum_Comp);
+    Next_Record-->Ptr_Comp = Ptr_Glob-->Ptr_Comp;
+    Next_Record-->Int_Comp=Proc_7 (Next_Record-->Int_Comp, 10);
+  }
+  else
+	memcpy(Ptr_Val_Par, Ptr_Val_Par-->Ptr_Comp, RecSize);
+];
+
+[Proc_2
+Int_Par_Ref
+Int_Loc Enum_Loc;
+
+  Int_Loc = Int_Par_Ref + 10;
+  do
+    if (Ch_1_Glob == 'A')
+    {
+      Int_Loc --;
+      Int_Par_Ref = Int_Loc - Int_Glob;
+      Enum_Loc = Ident_1;
+    }
+  until (Enum_Loc == Ident_1);
+return Int_Par_Ref;
+];
+
+[Proc_3
+Ptr_Ref_Par;
+if (Ptr_Glob)
+{
+	Ptr_Ref_Par-->0 = Ptr_Glob-->Ptr_Comp;
+}
+Ptr_Glob-->Int_Comp=Proc_7(10, Int_Glob);
+];
+
+[Proc_4
+Bool_Loc;
+Bool_Loc = Ch_1_Glob == 'A';
+Bool_Glob = Bool_Loc | Bool_Glob;
+Ch_2_Glob = 'B';
+];
+
+[Proc_5;
+Ch_1_Glob = 'A';
+Bool_Glob = 0;
+];
+
+[Proc_6
+Enum_Val_Par
+Enum_Ref_Par;
+  
+Enum_Ref_Par = Enum_Val_Par;
+if (~~Func_3 (Enum_Val_Par))
+	Enum_Ref_Par = Ident_4;
+switch (Enum_Val_Par)
+{
+Ident_1: 
+	Enum_Ref_Par = Ident_1;
+	break;
+Ident_2: 
+	if (Int_Glob > 100) Enum_Ref_Par = Ident_1;
+	else Enum_Ref_Par = Ident_4;
+	break;
+Ident_3:
+	Enum_Ref_Par = Ident_2;
+	break;
+Ident_4:
+	break;
+Ident_5: 
+	Enum_Ref_Par = Ident_3;
+	break;
+}
+return Enum_Ref_Par;
+];
+
+[Proc_7
+Int_1_Par_Val Int_2_Par_Val
+Int_Loc;
+
+Int_Loc = Int_1_Par_Val + 2;
+return Int_2_Par_Val + Int_Loc;
+];
+
+[Proc_8
+Arr_1_Par_Ref Int_1_Par_Val Int_2_Par_Val ! Should take Arr_2_Global as argument but limited to 3 args
+Int_Index Int_Loc;
+
+Int_Loc = Int_1_Par_Val + 5;
+Arr_1_Par_Ref-->Int_Loc = Int_2_Par_Val;
+Arr_1_Par_Ref-->(Int_Loc+1) = Arr_1_Par_Ref-->Int_Loc;
+Arr_1_Par_Ref-->(Int_Loc+30) = Int_Loc;
+for (Int_Index = Int_Loc: Int_Index <= Int_Loc+1: Int_Index++)
+Arr_2_Glob-->(50*Int_Loc+Int_Index) = Int_Loc;
+Arr_2_Glob-->(50*Int_Loc+Int_Loc-1) = Arr_2_Glob-->(50*Int_Loc+Int_Loc-1)+1;
+Arr_2_Glob-->(50*(Int_Loc+20)+Int_Loc) = Arr_1_Par_Ref-->Int_Loc;
+Int_Glob = 5;
+];
+
+[Dhrystone
+Run_Index Int_1_Loc Int_2_Loc Int_3_Loc Enum_Loc Ch_Index Str_1_Loc Str_2_Loc temp;
+
+Str_1_Loc=Str_1_Loc_Space;
+Str_2_Loc=Str_2_Loc_Space;
+strcpy(Str_1_Loc, String1);
+
+Ptr_Glob-->Ptr_Comp      = Next_Ptr_Glob;
+Ptr_Glob-->Discr         = Ident_1;
+Ptr_Glob-->Enum_Comp     = Ident_3;
+Ptr_Glob-->Int_Comp      = 40;
+strcpy(Ptr_Glob+Str_Comp, SomeString);
+Arr_2_Glob-->(8*50+7) 	 = 10;
+
+@print "Start Dhrystone x10000^";
+@show_status;
+
+for (Run_Index = 1: Run_Index <= Number_Of_Runs: Run_Index++)
+  {
+    Proc_5();
+    Proc_4();
+    Int_1_Loc = 2;
+    Int_2_Loc = 3;
+    strcpy (Str_2_Loc, String2);
+    Enum_Loc = Ident_2;
+    Bool_Glob = ~~Func_2 (Str_1_Loc, Str_2_Loc);
+    while (Int_1_Loc < Int_2_Loc)
+    {
+      Int_3_Loc = 5 * Int_1_Loc - Int_2_Loc;
+      Int_3_Loc = Proc_7 (Int_1_Loc, Int_2_Loc);
+      Int_1_Loc ++;
+    }
+    Proc_8 (Arr_1_Glob, Int_1_Loc, Int_3_Loc);
+    Proc_1 (Ptr_Glob);
+    for (Ch_Index = 'A': Ch_Index <= Ch_2_Glob: Ch_Index++)
+    {
+      if (Enum_Loc == Func_1 (Ch_Index, 'C'))
+      {
+        Enum_Loc=Proc_6 (Ident_1);
+        strcpy (Str_2_Loc, String3);
+        Int_2_Loc = Run_Index;
+        Int_Glob = Run_Index;
+      }
+    }
+    Int_2_Loc = Int_2_Loc * Int_1_Loc;
+    Int_1_Loc = Int_2_Loc / Int_3_Loc;
+    Int_2_Loc = 7 * (Int_2_Loc - Int_3_Loc) - Int_1_Loc;
+    Int_1_Loc = Proc_2 (Int_1_Loc);
+  }
+@print "End Dhrystone^^";
+@show_status;
+
+@print "Int_Glob: ";
+@print_num Int_Glob;
+@print " should be 5^";
+@print "Bool_Glob: ";
+@print_num Bool_Glob;
+@print " should be 1^";
+@print "Ch_1_Glob: '";
+@print_char Ch_1_Glob;
+@print "' should be 'A'^";
+@print "Ch_2_Glob: '";
+@print_char Ch_2_Glob;
+@print "' should be 'B'^";
+@print "Arr_1_Glob[8]: ";
+temp=Arr_1_Glob-->8;
+@print_num temp;
+@print " should be 7^";
+@print "Arr_2_Glob[8][7]: ";
+temp=Arr_2_Glob-->(8*50+7);
+@print_num temp;
+@print " should be Number_Of_Runs+10^";
+
+@print "Ptr_Glob->^";
+@print "  Ptr_Comp: ";
+temp=Ptr_Glob-->Ptr_Comp;
+@print_num temp;
+@new_line;
+@print "  Discr: ";
+temp=Ptr_Glob-->Discr;
+@print_num temp;
+@print " should be 0^";
+@print "  Enum_Comp: ";
+temp=Ptr_Glob-->Enum_Comp;
+@print_num temp;
+@print " should be 2^";
+@print "  Int_Comp: ";
+temp=Ptr_Glob-->Int_Comp;
+@print_num temp;
+@print " should be 17^";
+@print "  Str_Comp: ";
+temp=Ptr_Glob+Str_Comp;
+PrintString(temp);
+@print " should be DHRYSTONE PROGRAM, SOME STRING^";
+
+@print "Next_Ptr_Glob->^";
+@print "  Ptr_Comp: ";
+temp=Next_Ptr_Glob-->Ptr_Comp;
+@print_num temp;
+@print " should be same as above^";
+@print "  Discr: ";
+temp=Next_Ptr_Glob-->Discr;
+@print_num temp;
+@print " should be 0^";
+@print "  Enum_Comp: ";
+temp=Next_Ptr_Glob-->Enum_Comp;
+@print_num temp;
+@print " should be 1^";
+@print "  Int_Comp: ";
+temp=Next_Ptr_Glob-->Int_Comp;
+@print_num temp;
+@print " should be 18^";
+@print "  Str_Comp: ";
+temp=Next_Ptr_Glob+Str_Comp;
+PrintString(temp);
+@print " should be DHRYSTONE PROGRAM, SOME STRING^";
+
+@print "Int_1_Loc: ";
+@print_num Int_1_Loc;
+@print " should be 5^";
+@print "Int_2_Loc: ";
+@print_num Int_2_Loc;
+@print " should be 13^";
+@print "Int_3_Loc: ";
+@print_num Int_3_Loc;
+@print " should be 7^";
+@print "Enum_Loc: ";
+@print_num Enum_Loc;
+@print " should be 1^";
+@print "Str_1_Loc: ";
+PrintString(Str_1_Loc);
+@print " should be DHRYSTONE PROGRAM, 1'ST STRING^";
+@print "Str_2_Loc: ";
+PrintString(Str_2_Loc);
+@print " should be DHRYSTONE PROGRAM, 2'ND STRING^^";
+@show_status;
+];
+
 [Main
 t;
 	AckermannBench();
 	Sieve();
+	Dhrystone();
 	Mandelbrot();
 	Mandelbrot32();
 ];
