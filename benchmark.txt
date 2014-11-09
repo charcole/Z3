@@ -3,6 +3,11 @@
 6.33 -> 12.44 = 6.11s x10000 Dhrystone => 1636 Dhrystones per second
                                           or 0.93 DMIPS or 0.093 DMIP/MHz
 
+Core i7 2.7GHz Early 2011 13-inch MacBook Pro
+zops 14.25s for x500000 => 35087 => 19.97 DMIPS
+Zoom  6.75s for x500000 => 74074 => 42.15 DMIPS
+Frotz 6.15s for x500000 => 81300 => 46.27 DMIPS
+
 10x Sieve (Lower is better)
 
 Acorn Archimedes 8Mz ARM2 + Acorn C       0.5
