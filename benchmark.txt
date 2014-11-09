@@ -6,7 +6,8 @@
 Core i7 2.7GHz Early 2011 13-inch MacBook Pro
 zops 14.25s for x500000 => 35087 => 19.97 DMIPS
 Zoom  6.75s for x500000 => 74074 => 42.15 DMIPS
-Frotz 6.15s for x500000 => 81300 => 46.27 DMIPS
+Frotz 6.15s for x500000 => 81300 => 46.27 DMIPS or 0.017 DMIP/MHz
+
 
 10x Sieve (Lower is better)
 
@@ -39,5 +40,7 @@ Atari ST 8MHz							  0.6
 IBM PC/AT 286 8MHz						  1.3
 Compaq 386 16MHz						  1.7
 ARM2 8MHz								  2.6
-Core i7 4820K (No opt) 3.9GHz          2014.
-Core i7 4820K (Optimised) 3.9GHz      11978.
+Acorn RiscPC ARM 610 30 MHz				 18.4
+Frotz (Early 2011 13-MacBook i7 2.7GHz)	 46.2
+Early 2011 MacBook Pro i7 2.7GHz O0    5405.  or 2.00 DMIPs/MHz
+Early 2011 MacBook Pro i7 2.7GHz O3   14121.  or 5.23 DMIPs/MHz
