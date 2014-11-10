@@ -63,17 +63,31 @@ editor.
 RUNNING ON HARDWARE
 -------------------
 
+THE HARDWARE
+
+A "EP2C5 Cyclone II Mini Board" AKA "CycloneII EP2C5T144 Learning Board".
+These contain an EP2C5T144 which is an Cyclone II FPGA with around 4600 LEs.
+They are very reasonably priced on eBay (~$10).
+
+'2.4" TFT LCD Shield' by http://mcufriend.com was used as a screen. Again very
+cheap off eBay (~$3). It's a colour screen with resistive touch screen.
+
+RS Part No. Part No.		Description									Price
+7118029		A29L040-70F 	Parallel FLASH 4MB, 512Kx8, 3V, DIP32	    £1.24
+7444542		AS6C1008-55PCN	SRAM,1M,128Kx8,55ns,3V,Low Power,DIP32	    £1.65
+6696064		MCP3008-I/P		A/D Converter 10Bit 8-ch 2.7V SPI PDIP16	£1.53
+
+
 TO PROGRAM THE FPGA
 
-todo
+Obtain Altera Quantus II 13.0sp1. I believe this was the last version to
+support Cyclone II. Open project altera/ZMachine.qpf and hit compile.
+Nb. ZMachine.v is identical to z3.vl.
 
 
-TO BUILD THE SUPPORT CIRCUITS
+TO PROGRAM THE ROM
 
-todo
-
-
-TO PROGRAM THE CHIP
+Using a Minipro TL866CS
 
 minipro -w rom.z3 -p "A29L040 @DIP32"
 
