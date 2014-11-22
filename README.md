@@ -7,10 +7,12 @@ Back in the very early 80s Infocom, the purveyor of very fine text based video g
 
 This virtual machine was never meant to be implemented in hardware although now thanks to cheap FPGAs it can be! The Z-Machine CPU is written in Verilog and included here. So using a Cyclone II EP2C5 FPGA (~$10), a TFT LCD Arduino Shield (~$3), 512Kb 8-bit flash (~$2), 128Kb 8-bit SRAM (~$2) and a ADC ($2) you too could have a functioning Z-Machine system.
 
-The spec the Z3 follows is...
-http://inform-fiction.org/zmachine/standards/z1point0/index.html
+Check out the following YouTube video to see it in action...
 
-Specifically version 3, the so called "Standard" games. These were released between 1982 and 1987 and covers most Infocom games.
+[![Hardware Z-Machine](http://img.youtube.com/vi/HuQZq6DQQDY/0.jpg)](http://www.youtube.com/watch?v=HuQZq6DQQDY)
+
+The spec the Z3 follows is...
+http://inform-fiction.org/zmachine/standards/z1point0/index.html. Specifically version 3, the so called "Standard" games. These were released between 1982 and 1987 and covers most Infocom games.
 
 Z3 passes the "CZECH - Comprehensive Z-machine Emulation CHecker" by Amir Karger. And is known to run Zork I, Hitchhiker's Guide to the Galaxy, Planetfall and Curses (by Graham Nelson).
 
