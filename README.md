@@ -26,4 +26,6 @@ The BIOS contains two easter eggs. By typing "invade" a fairly complete Space In
 
 For (very brief) instructions to build, check instructions.txt.
 
-Disclaimer: This is my first Verilog project so might not be written all that well
+*Nb. To save time while developing the BIOS I modified my existing Z-machine interpreter to support the Z3's extra opcodes, memory layout and peripherals so I could interate without having to remove and reflash the ROM. Thanks to Emscripten this Z3 emulator can now be [run in a any modern browser](http://charcole.github.io/Z3/emscripten/zops.html).*
+
+*Disclaimer: This is my first Verilog project so might not be written all that well*
