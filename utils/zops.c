@@ -6,6 +6,10 @@
 #include <ctype.h>
 #include "SDL.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #define MAX_TOKEN_LEN 256
 #define USE_BIOS 1
 
@@ -126,6 +130,7 @@ int winYMax=320-1;
 SDL_Window *window;
 SDL_Renderer *ren;
 SDL_Texture *tex;
+SDL_Surface *surface;
 int mouseDown=0;
 int mouseX=0;
 int mouseY=0;
@@ -1255,11 +1260,13 @@ void process2OPInstruction()
 			}
 			else if (m_ins.operands[0].value==7)
 			{
+#ifndef __EMSCRIPTEN__
 				SDL_UpdateTexture(tex, NULL, screen, 240*sizeof(screen[0]));
 				SDL_RenderClear(ren);
 				SDL_RenderCopy(ren, tex, NULL, NULL);
 				SDL_RenderPresent(ren);
 				SDL_Delay(1);
+#endif
 			}
 			break;
 		case 0x1F:
@@ -1522,11 +1529,13 @@ void processVARInstruction()
 						curIdx=curY*240+curX;
 					}
 				}
+#ifndef __EMSCRIPTEN__
 				SDL_UpdateTexture(tex, NULL, screen, 240*sizeof(screen[0]));
 				SDL_RenderClear(ren);
 				SDL_RenderCopy(ren, tex, NULL, NULL);
 				SDL_RenderPresent(ren);
 				SDL_Delay(1);
+#endif
 				forceDynamic=0;
 				break;
 			}
@@ -1537,7 +1546,6 @@ void executeInstruction()
 {
 	m_ins.numOps=0;
 	//printf("\nPC:%05x ", m_pc);
-	//System.out.println(String.format("%04x", m_pc));
 	int opcode=readBytePC();
 	if ((opcode&0xC0)==0xC0)
 	{
@@ -1593,18 +1601,49 @@ void executeInstruction()
 	}
 }
 
+#ifdef __EMSCRIPTEN__
+void executeInstruction30()
+{
+	for (int i=0; i<50000; i++)
+	{
+		executeInstruction();
+	}
+	if (SDL_MUSTLOCK(surface)) SDL_LockSurface(surface);
+	for (int i = 0; i < 320; i++)
+	{
+		for (int j = 0; j < 240; j++)
+		{
+			u16 c=screen[i*240+j];
+			u8 r=(c>>8)&0xF8;
+			u8 g=(c>>3)&0xFC;
+			u8 b=(c<<3)&0xF8;
+			*((Uint32*)surface->pixels + i * 240 + j) = SDL_MapRGBA(surface->format, r, g, b, 255);
+		}
+	}
+	if (SDL_MUSTLOCK(surface)) SDL_UnlockSurface(surface);
+	SDL_Flip(surface); 
+}
+#endif
+
 int main(int argc, char **argv)
 {
 	TFile fh;
+#ifdef __EMSCRIPTEN__
+	if (fileOpen(&fh, "rom.z3", TRUE))
+#else
 	if (argc!=2)
 	{
 		printf("Usage: zops game.z3\n");
 	}
 	else if (fileOpen(&fh, argv[1], TRUE))
+#endif
 	{
 		m_memSize=fileSize(&fh);
 
 		SDL_Init(SDL_INIT_VIDEO);
+#ifdef __EMSCRIPTEN__
+		surface = SDL_SetVideoMode(240, 320, 32, SDL_SWSURFACE);
+#else
 		window = SDL_CreateWindow("TFTLCD",SDL_WINDOWPOS_UNDEFINED,SDL_WINDOWPOS_UNDEFINED,240,320,SDL_WINDOW_SHOWN);
 		if (window == NULL)
 		{
@@ -1623,6 +1662,7 @@ int main(int argc, char **argv)
 			printf("Could not create texture: %s\n", SDL_GetError());
 			return 1;
 		}
+#endif
 
 		rom=memAlloc(m_memSize);
 		memory=memAlloc(m_memSize);
@@ -1631,15 +1671,18 @@ int main(int argc, char **argv)
 		fileReadData(&fh, rom, m_memSize);
 		fileClose(&fh);
 		restart();
+#ifdef __EMSCRIPTEN__
+		emscripten_set_main_loop(executeInstruction30, 30, 0);
+#else
 		while (1)
 		{
 			executeInstruction();
 		}
-
 		SDL_DestroyTexture(tex);
 		SDL_DestroyRenderer(ren);
 		SDL_DestroyWindow(window);
 		SDL_Quit();
+#endif
 		return 0;
 	}
 	return 1;
